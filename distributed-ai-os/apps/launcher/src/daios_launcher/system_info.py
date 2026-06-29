@@ -12,6 +12,7 @@ from pydantic import BaseModel
 class SystemInfo(BaseModel):
     hostname: str
     lan_ip: str
+    local_ips: list[str]
     cpu_count: int
     ram_total_gb: float
     ram_available_gb: float
@@ -28,6 +29,46 @@ def get_lan_ip() -> str:
         return "127.0.0.1"
 
 
+def get_local_addresses() -> set[str]:
+    """All addresses that refer to this machine."""
+    addresses = {"127.0.0.1", "0.0.0.0", "::1", "localhost"}
+    addresses.add(get_lan_ip())
+    try:
+        hostname = socket.gethostname().lower()
+        addresses.add(hostname)
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            addresses.add(info[4][0])
+    except OSError:
+        pass
+    for addrs in psutil.net_if_addrs().values():
+        for addr in addrs:
+            if addr.family == socket.AF_INET:
+                addresses.add(addr.address)
+    return addresses
+
+
+def gather_local_ips() -> list[str]:
+    """Sorted LAN-relevant addresses for this machine."""
+    return sorted(
+        ip for ip in get_local_addresses() if ip not in {"0.0.0.0", "localhost", "::1"}
+    )
+
+
+def normalize_host(host: str) -> str:
+    text = host.strip().lower()
+    if text == "localhost":
+        return "127.0.0.1"
+    if ":" in text and not text.startswith("["):
+        text = text.split(":", 1)[0]
+    return text
+
+
+def is_local_address(host: str, local_ips: set[str] | None = None) -> bool:
+    local_ips = local_ips or get_local_addresses()
+    normalized = normalize_host(host)
+    return normalized in {normalize_host(ip) for ip in local_ips}
+
+
 def list_models(models_dir: Path) -> list[str]:
     if not models_dir.is_dir():
         return []
@@ -37,9 +78,11 @@ def list_models(models_dir: Path) -> list[str]:
 def gather_system_info(project_root: Path) -> SystemInfo:
     mem = psutil.virtual_memory()
     models_dir = project_root / "models"
+    lan_ip = get_lan_ip()
     return SystemInfo(
         hostname=socket.gethostname(),
-        lan_ip=get_lan_ip(),
+        lan_ip=lan_ip,
+        local_ips=gather_local_ips(),
         cpu_count=psutil.cpu_count(logical=True) or 1,
         ram_total_gb=round(mem.total / (1024**3), 1),
         ram_available_gb=round(mem.available / (1024**3), 1),

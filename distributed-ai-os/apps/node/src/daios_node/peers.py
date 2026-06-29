@@ -14,23 +14,32 @@ from daios_protocol.health import PeerStatus
 logger = logging.getLogger(__name__)
 
 
+async def _tcp_probe(host: str, port: int, timeout: float) -> tuple[bool, str | None]:
+    """Blocking TCP connect run in a thread pool."""
+    import socket
+
+    sock: socket.socket | None = None
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        sock.connect((host, port))
+        return True, None
+    except OSError as exc:
+        return False, str(exc)
+    finally:
+        if sock is not None:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            sock.close()
+
+
 async def check_peer(peer: PeerConfig, timeout: float = 3.0) -> PeerStatus:
     """Probe a peer's RPC port (TCP) and optional API health endpoint."""
     host, port = peer.host, peer.rpc_port
     start = time.perf_counter()
-    reachable = False
-    error: str | None = None
-
-    try:
-        _, writer = await asyncio.wait_for(
-            asyncio.open_connection(host, port),
-            timeout=timeout,
-        )
-        writer.close()
-        await writer.wait_closed()
-        reachable = True
-    except (OSError, asyncio.TimeoutError) as exc:
-        error = str(exc)
+    reachable, error = await asyncio.to_thread(_tcp_probe, host, port, timeout)
 
     latency_ms: float | None = None
     if reachable:
@@ -42,7 +51,11 @@ async def check_peer(peer: PeerConfig, timeout: float = 3.0) -> PeerStatus:
                 response = await client.get(f"http://{host}:{peer.api_port}/health")
                 if response.status_code >= 500:
                     error = f"health endpoint returned {response.status_code}"
+                elif response.status_code >= 400:
+                    reachable = False
+                    error = f"health endpoint returned {response.status_code}"
         except httpx.HTTPError as exc:
+            reachable = False
             error = f"health check failed: {exc}"
 
     return PeerStatus(

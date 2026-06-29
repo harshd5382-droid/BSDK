@@ -1,6 +1,7 @@
 export interface SystemInfo {
   hostname: string;
   lan_ip: string;
+  local_ips: string[];
   cpu_count: number;
   ram_total_gb: number;
   ram_available_gb: number;

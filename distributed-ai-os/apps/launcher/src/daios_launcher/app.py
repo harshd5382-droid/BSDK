@@ -18,8 +18,8 @@ from pydantic import BaseModel
 from daios_launcher.config_gen import StartRequest, build_node_config, write_runtime_config
 from daios_launcher.process_manager import LauncherState, ProcessManager, _sanitize_log_text
 from daios_launcher.system_info import gather_system_info
+from daios_launcher.validation import validate_start_request, wait_for_peer
 from daios_protocol.config import NodeRole, PeerConfig
-from daios_node.peers import check_peer
 
 logger = logging.getLogger(__name__)
 
@@ -95,29 +95,28 @@ class LauncherApp:
             if self.process_manager.node and self.process_manager.node.state == LauncherState.RUNNING:
                 raise HTTPException(status_code=409, detail="Node already running")
 
-            if (
-                req.role in (NodeRole.COORDINATOR, NodeRole.HYBRID)
-                and req.peer_host
-                and req.backend != "mock"
-            ):
-                peer_status = await check_peer(
-                    PeerConfig(
-                        id="preflight",
-                        host=req.peer_host,
-                        rpc_port=req.peer_rpc_port,
-                        api_port=req.peer_api_port,
-                    ),
-                    timeout=3.0,
+            validation_error = validate_start_request(req)
+            if validation_error:
+                raise HTTPException(status_code=400, detail=validation_error)
+
+            peer_config: PeerConfig | None = None
+            if req.role in (NodeRole.COORDINATOR, NodeRole.HYBRID) and req.peer_host and req.backend != "mock":
+                peer_config = PeerConfig(
+                    id="preflight",
+                    host=req.peer_host.strip(),
+                    rpc_port=req.peer_rpc_port,
+                    api_port=req.peer_api_port,
                 )
-                if not peer_status.reachable:
-                    raise HTTPException(
-                        status_code=503,
-                        detail=(
-                            f"Worker not reachable at {req.peer_host}:{req.peer_rpc_port}. "
-                            "On the other PC, run the dashboard and choose Help another PC → Start Worker. "
-                            f"({peer_status.error})"
-                        ),
+                peer_status = await wait_for_peer(peer_config, timeout=20.0)
+                if not peer_status.reachable or peer_status.error:
+                    detail = (
+                        f"Worker not reachable at {req.peer_host}:{req.peer_rpc_port}. "
+                        "On the other PC, open this dashboard → Help another PC → Start Worker, "
+                        "then try again."
                     )
+                    if peer_status.error:
+                        detail += f" ({peer_status.error})"
+                    raise HTTPException(status_code=503, detail=detail)
 
             config = build_node_config(req, project_root=self.project_root)
             config_path = write_runtime_config(config, self.runtime_dir)
@@ -126,6 +125,7 @@ class LauncherApp:
                 role=config.role.value,
                 node_id=config.node_id,
                 api_port=config.network.api_port,
+                rpc_port=config.network.rpc_port if config.runs_rpc_server else None,
             )
             if node.state == LauncherState.FAILED:
                 raise HTTPException(

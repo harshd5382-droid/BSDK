@@ -10,6 +10,15 @@ interface Props {
   error: string | null;
 }
 
+function isLocalPeer(host: string, system: SystemInfo): boolean {
+  const normalized = host.trim().toLowerCase().split(":")[0];
+  if (!normalized || normalized === "localhost" || normalized === "127.0.0.1") {
+    return true;
+  }
+  if (normalized === system.lan_ip.toLowerCase()) return true;
+  return (system.local_ips ?? []).some((ip) => ip.toLowerCase() === normalized);
+}
+
 export default function ConnectCoordinator({
   system,
   onStart,
@@ -20,7 +29,9 @@ export default function ConnectCoordinator({
   const [peerHost, setPeerHost] = useState("");
   const [modelPath, setModelPath] = useState(system.models[0] ?? "");
 
-  const canStart = peerHost.trim() && (modelPath || system.models.length === 0);
+  const peerIsSelf = peerHost.trim() ? isLocalPeer(peerHost, system) : false;
+  const canStart =
+    peerHost.trim() && !peerIsSelf && (modelPath || system.models.length === 0);
 
   return (
     <div className="max-w-lg mx-auto">
@@ -64,9 +75,20 @@ export default function ConnectCoordinator({
         )}
 
         <div className="bg-fabric-800/50 border border-fabric-700 rounded-lg px-4 py-3 text-sm text-fabric-600">
-          This PC's address:{" "}
-          <span className="font-display text-accent">{system.lan_ip}</span>
+          This PC is the <span className="text-white">Coordinator</span> — its
+          address is{" "}
+          <span className="font-display text-accent">{system.lan_ip}</span>.
+          Enter the <strong className="text-white">other</strong> PC's worker IP
+          below.
         </div>
+
+        {peerIsSelf && (
+          <div className="px-4 py-3 bg-warm/10 border border-warm/30 rounded-lg text-warm text-sm">
+            That IP is this computer. Run as{" "}
+            <strong>Worker</strong> here instead, and Coordinator on the other
+            PC.
+          </div>
+        )}
       </div>
 
       {error && (

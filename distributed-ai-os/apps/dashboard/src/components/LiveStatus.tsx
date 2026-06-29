@@ -13,6 +13,7 @@ interface Props {
   onStop: () => void;
   onRestart: () => void;
   stopping: boolean;
+  restarting?: boolean;
 }
 
 export default function LiveStatus({
@@ -23,6 +24,7 @@ export default function LiveStatus({
   onStop,
   onRestart,
   stopping,
+  restarting = false,
 }: Props) {
   const peer = cluster?.peers[0];
   const peerOk = peer?.reachable ?? false;
@@ -37,9 +39,10 @@ export default function LiveStatus({
           <motion.button
             whileTap={{ scale: 0.95 }}
             onClick={onRestart}
-            className="cursor-pointer px-4 py-2 text-sm border border-fabric-700 rounded-lg hover:border-accent/50 transition-colors"
+            disabled={stopping || restarting}
+            className="cursor-pointer px-4 py-2 text-sm border border-fabric-700 rounded-lg hover:border-accent/50 disabled:opacity-40 transition-colors"
           >
-            Restart
+            {restarting ? "Restarting…" : "Restart"}
           </motion.button>
           <motion.button
             whileTap={{ scale: 0.95 }}
@@ -71,12 +74,29 @@ export default function LiveStatus({
         />
       </div>
 
-      {peer && !peerOk && (
+      {peer && !peerOk && isCoordinator && (
         <div className="mb-4 px-4 py-3 bg-warm/10 border border-warm/30 rounded-lg text-warm text-sm">
           Worker at <span className="font-display">{peer.host}:{peer.rpc_port}</span>{" "}
           is not reachable
-          {peer.error ? ` (${peer.error})` : ""}. Start the worker on the other PC first,
-          then restart the coordinator.
+          {peer.error ? ` (${peer.error})` : ""}.
+          <ol className="mt-2 list-decimal list-inside space-y-1">
+            <li>
+              On the worker PC: open this dashboard →{" "}
+              <strong>Help another PC</strong> → <strong>Start Worker</strong>
+            </li>
+            <li>
+              Confirm it shows address{" "}
+              <span className="font-display">{peer.host}:50052</span>
+            </li>
+            <li>Then click Restart on this Coordinator PC</li>
+          </ol>
+        </div>
+      )}
+
+      {status.role === "worker" && (
+        <div className="mb-4 px-4 py-3 bg-accent/10 border border-accent/30 rounded-lg text-fabric-600 text-sm">
+          Worker is running. On the <strong className="text-white">other PC</strong>,
+          choose Coordinator and enter this machine's IP as the worker address.
         </div>
       )}
 

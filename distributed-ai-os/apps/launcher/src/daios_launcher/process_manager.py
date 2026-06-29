@@ -179,10 +179,19 @@ class ProcessManager:
     runtime_dir: Path
     node: NodeProcess | None = None
 
-    def start_node(self, config_path: Path, role: str, node_id: str, api_port: int) -> NodeProcess:
+    def start_node(
+        self,
+        config_path: Path,
+        role: str,
+        node_id: str,
+        api_port: int,
+        rpc_port: int | None = None,
+    ) -> NodeProcess:
         if self.node:
             self.node.stop()
         _kill_port_listeners(api_port)
+        if rpc_port and rpc_port != api_port:
+            _kill_port_listeners(rpc_port)
         self.node = NodeProcess(
             config_path=config_path,
             role=role,

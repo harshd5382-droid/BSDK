@@ -10,7 +10,8 @@ from fastapi.testclient import TestClient
 
 from daios_protocol.config import NodeRole, load_config
 from daios_launcher.config_gen import StartRequest, build_node_config, write_runtime_config
-from daios_launcher.system_info import gather_system_info, get_lan_ip
+from daios_launcher.system_info import gather_system_info, get_lan_ip, is_local_address
+from daios_launcher.validation import validate_start_request
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -99,7 +100,7 @@ def mock_coordinator_running(launcher_client):
             "role": "coordinator",
             "backend": "mock",
             "api_port": 8010,
-            "peer_host": "127.0.0.1",
+            "peer_host": "192.168.254.99",
             "peer_rpc_port": 50053,
             "peer_api_port": 8011,
         },
@@ -143,3 +144,52 @@ def test_build_coordinator_resolves_model_path():
     config = build_node_config(req, project_root=ROOT)
     assert config.inference.model_path
     assert Path(config.inference.model_path).is_file()
+
+
+def test_validate_rejects_coordinator_with_local_peer():
+    lan = get_lan_ip()
+    req = StartRequest(role=NodeRole.COORDINATOR, peer_host=lan, backend="mock")
+    err = validate_start_request(req)
+    assert err is not None
+    assert "cannot be this PC" in err
+
+
+def test_validate_rejects_worker_with_peer_host():
+    req = StartRequest(role=NodeRole.WORKER, peer_host="192.168.1.42", backend="mock")
+    err = validate_start_request(req)
+    assert err is not None
+
+
+def test_validate_accepts_worker():
+    req = StartRequest(role=NodeRole.WORKER, backend="mock")
+    assert validate_start_request(req) is None
+
+
+def test_is_local_address():
+    assert is_local_address("127.0.0.1")
+    assert is_local_address(get_lan_ip())
+    assert not is_local_address("192.168.254.99")
+
+
+def test_launcher_rejects_coordinator_pointing_at_self(launcher_client):
+    lan = get_lan_ip()
+    resp = launcher_client.post(
+        "/api/launcher/stop",
+    )
+    resp = launcher_client.post(
+        "/api/launcher/start",
+        json={
+            "role": "coordinator",
+            "backend": "mock",
+            "peer_host": lan,
+        },
+    )
+    assert resp.status_code == 400
+    assert "cannot be this PC" in resp.json()["detail"]
+
+
+def test_system_includes_local_ips(launcher_client):
+    resp = launcher_client.get("/api/launcher/system")
+    data = resp.json()
+    assert "local_ips" in data
+    assert get_lan_ip() in data["local_ips"]

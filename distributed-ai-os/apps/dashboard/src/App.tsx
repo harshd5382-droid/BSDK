@@ -12,13 +12,21 @@ import RoleSelect from "./components/RoleSelect";
 import ConnectCoordinator from "./components/ConnectCoordinator";
 import ConnectWorker from "./components/ConnectWorker";
 import LiveStatus from "./components/LiveStatus";
-import type { NodeRole, SystemInfo, WizardStep } from "./types";
+import type { NodeRole, StartRequest, SystemInfo, WizardStep } from "./types";
 
 const stepVariants = {
   enter: { opacity: 0, x: 40 },
   center: { opacity: 1, x: 0 },
   exit: { opacity: 0, x: -40 },
 };
+
+function isLocalPeer(host: string, system: SystemInfo): boolean {
+  const normalized = host.trim().toLowerCase().split(":")[0];
+  if (!normalized || normalized === "localhost") return true;
+  if (normalized === "127.0.0.1") return true;
+  if (normalized === system.lan_ip.toLowerCase()) return true;
+  return (system.local_ips ?? []).some((ip) => ip.toLowerCase() === normalized);
+}
 
 export default function App() {
   const [step, setStep] = useState<WizardStep>("welcome");
@@ -27,6 +35,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [stopping, setStopping] = useState(false);
+  const [lastStart, setLastStart] = useState<StartRequest | null>(null);
 
   const { status, cluster, refresh } = useStatus(
     step === "live" ? 2000 : 5000,
@@ -40,6 +49,7 @@ export default function App() {
         setSystem({
           hostname: "unknown",
           lan_ip: "127.0.0.1",
+          local_ips: ["127.0.0.1"],
           cpu_count: 1,
           ram_total_gb: 0,
           ram_available_gb: 0,
@@ -56,19 +66,29 @@ export default function App() {
 
   const handleStartCoordinator = useCallback(
     async (peerHost: string, modelPath: string) => {
+      if (!system) return;
+      if (isLocalPeer(peerHost, system)) {
+        setStartError(
+          `Worker IP cannot be this PC (${system.lan_ip}). Choose Worker on this machine and Coordinator on the other PC.`,
+        );
+        return;
+      }
+
       setLoading(true);
       setStartError(null);
+      const req: StartRequest = {
+        role: "coordinator",
+        peer_host: peerHost.trim(),
+        peer_rpc_port: 50052,
+        peer_api_port: 8001,
+        model_path: modelPath || undefined,
+        backend: modelPath ? "llama.cpp" : "mock",
+        api_port: 8000,
+      };
       try {
-        const useMock = !modelPath;
-        await startNode({
-          role: "coordinator",
-          peer_host: peerHost,
-          peer_rpc_port: 50052,
-          peer_api_port: 8001,
-          model_path: modelPath || undefined,
-          backend: useMock ? "mock" : "llama.cpp",
-          api_port: 8000,
-        });
+        await startNode(req);
+        setLastStart(req);
+        setRole("coordinator");
         setStep("live");
         refresh();
       } catch (e) {
@@ -77,19 +97,22 @@ export default function App() {
         setLoading(false);
       }
     },
-    [refresh],
+    [refresh, system],
   );
 
   const handleStartWorker = useCallback(async () => {
     setLoading(true);
     setStartError(null);
+    const req: StartRequest = {
+      role: "worker",
+      backend: "llama.cpp",
+      api_port: 8001,
+      rpc_port: 50052,
+    };
     try {
-      await startNode({
-        role: "worker",
-        backend: "llama.cpp",
-        api_port: 8001,
-        rpc_port: 50052,
-      });
+      await startNode(req);
+      setLastStart(req);
+      setRole("worker");
       setStep("live");
       refresh();
     } catch (e) {
@@ -105,15 +128,35 @@ export default function App() {
       await stopNode();
       setStep("welcome");
       setRole(null);
+      setLastStart(null);
       refresh();
     } finally {
       setStopping(false);
     }
   }, [refresh]);
 
-  const handleRestart = useCallback(() => {
-    handleStop().then(() => setStep("role"));
-  }, [handleStop]);
+  const handleRestart = useCallback(async () => {
+    if (!lastStart) {
+      await handleStop();
+      setStep("role");
+      return;
+    }
+    setStopping(true);
+    setLoading(true);
+    setStartError(null);
+    try {
+      await stopNode();
+      await startNode(lastStart);
+      setStep("live");
+      refresh();
+    } catch (e) {
+      setStartError(e instanceof Error ? e.message : "Restart failed");
+      setStep("connect");
+    } finally {
+      setStopping(false);
+      setLoading(false);
+    }
+  }, [handleStop, lastStart, refresh]);
 
   if (!system) {
     return (
@@ -186,6 +229,7 @@ export default function App() {
                 onStop={handleStop}
                 onRestart={handleRestart}
                 stopping={stopping}
+                restarting={loading}
               />
             )}
           </motion.div>

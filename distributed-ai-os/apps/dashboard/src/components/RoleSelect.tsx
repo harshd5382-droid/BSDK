@@ -21,8 +21,13 @@ export default function RoleSelect({ onSelect, onBack }: Props) {
       <h2 className="font-display text-2xl font-semibold text-center mb-2">
         What does this PC do?
       </h2>
-      <p className="text-fabric-600 text-center mb-8">
+      <p className="text-fabric-600 text-center mb-4">
         Pick one role for this computer.
+      </p>
+      <p className="text-center text-xs text-warm mb-8 max-w-md mx-auto">
+        In a two-PC cluster: one machine runs <strong>Worker</strong>, the
+        other runs <strong>Coordinator</strong>. Do not run the same role on
+        both.
       </p>
 
       <div className="grid md:grid-cols-2 gap-4 mb-8">
