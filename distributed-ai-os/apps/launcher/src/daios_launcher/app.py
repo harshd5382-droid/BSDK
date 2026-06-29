@@ -16,10 +16,23 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from daios_launcher.config_gen import StartRequest, build_node_config, write_runtime_config
-from daios_launcher.process_manager import LauncherState, ProcessManager
+from daios_launcher.process_manager import LauncherState, ProcessManager, _sanitize_log_text
 from daios_launcher.system_info import gather_system_info
+from daios_protocol.config import NodeRole, PeerConfig
+from daios_node.peers import check_peer
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_start_error(error: str | None) -> str | None:
+    if not error:
+        return None
+    text = _sanitize_log_text(error).strip()
+    if "address already in use" in text:
+        return "Port already in use — stop the old node and try again."
+    if "Failed to connect" in text or "Connection refused" in text:
+        return text
+    return text or None
 
 
 class ChatRequest(BaseModel):
@@ -66,6 +79,7 @@ class LauncherApp:
             node = self.process_manager.node
             if node:
                 node.refresh()
+            last_error = _sanitize_start_error(node.last_error) if node else None
             return {
                 "launcher": "ok",
                 "node_state": node.state.value if node else LauncherState.STOPPED.value,
@@ -73,13 +87,37 @@ class LauncherApp:
                 "node_id": node.node_id if node else None,
                 "api_port": node.api_port if node else None,
                 "uptime_seconds": node.uptime_seconds() if node else 0,
-                "last_error": node.last_error if node else None,
+                "last_error": last_error,
             }
 
         @app.post("/api/launcher/start")
         async def start(req: StartRequest):
             if self.process_manager.node and self.process_manager.node.state == LauncherState.RUNNING:
                 raise HTTPException(status_code=409, detail="Node already running")
+
+            if (
+                req.role in (NodeRole.COORDINATOR, NodeRole.HYBRID)
+                and req.peer_host
+                and req.backend != "mock"
+            ):
+                peer_status = await check_peer(
+                    PeerConfig(
+                        id="preflight",
+                        host=req.peer_host,
+                        rpc_port=req.peer_rpc_port,
+                        api_port=req.peer_api_port,
+                    ),
+                    timeout=3.0,
+                )
+                if not peer_status.reachable:
+                    raise HTTPException(
+                        status_code=503,
+                        detail=(
+                            f"Worker not reachable at {req.peer_host}:{req.peer_rpc_port}. "
+                            "On the other PC, run the dashboard and choose Help another PC → Start Worker. "
+                            f"({peer_status.error})"
+                        ),
+                    )
 
             config = build_node_config(req, project_root=self.project_root)
             config_path = write_runtime_config(config, self.runtime_dir)
@@ -90,7 +128,32 @@ class LauncherApp:
                 api_port=config.network.api_port,
             )
             if node.state == LauncherState.FAILED:
-                raise HTTPException(status_code=500, detail=node.last_error or "Start failed")
+                raise HTTPException(
+                    status_code=500,
+                    detail=_sanitize_start_error(node.last_error) or "Start failed",
+                )
+
+            if self._http and config.inference.backend != "mock":
+                await asyncio.sleep(2.0)
+                try:
+                    resp = await self._http.get(
+                        f"http://127.0.0.1:{node.api_port}/health",
+                        timeout=10.0,
+                    )
+                    health = resp.json()
+                    llama_state = health.get("inference", {}).get("llama_server")
+                    if config.runs_coordinator and llama_state in ("failed", "stopped"):
+                        self.process_manager.stop_node()
+                        raise HTTPException(
+                            status_code=500,
+                            detail=(
+                                "llama-server did not start. Ensure the worker PC is running "
+                                "and port 50052 is open in its firewall."
+                            ),
+                        )
+                except httpx.HTTPError:
+                    pass
+
             return {
                 "status": node.state.value,
                 "node_id": node.node_id,
@@ -105,14 +168,12 @@ class LauncherApp:
 
         @app.get("/api/launcher/cluster")
         async def cluster():
-            node = self.process_manager.node
-            if not node or node.state != LauncherState.RUNNING:
-                raise HTTPException(status_code=503, detail="Node not running")
             if not self._http:
                 raise HTTPException(status_code=503, detail="Launcher not ready")
+            api_port = await self._active_api_port()
             try:
                 resp = await self._http.get(
-                    f"http://127.0.0.1:{node.api_port}/api/v1/cluster",
+                    f"http://127.0.0.1:{api_port}/api/v1/cluster",
                     timeout=5.0,
                 )
                 return resp.json()
@@ -121,14 +182,12 @@ class LauncherApp:
 
         @app.get("/api/launcher/health")
         async def node_health():
-            node = self.process_manager.node
-            if not node or node.state != LauncherState.RUNNING:
-                raise HTTPException(status_code=503, detail="Node not running")
             if not self._http:
                 raise HTTPException(status_code=503, detail="Launcher not ready")
+            api_port = await self._active_api_port()
             try:
                 resp = await self._http.get(
-                    f"http://127.0.0.1:{node.api_port}/health",
+                    f"http://127.0.0.1:{api_port}/health",
                     timeout=5.0,
                 )
                 return resp.json()
@@ -160,11 +219,9 @@ class LauncherApp:
 
         @app.post("/api/launcher/chat")
         async def chat(req: ChatRequest):
-            node = self.process_manager.node
-            if not node or node.state != LauncherState.RUNNING:
-                raise HTTPException(status_code=503, detail="Node not running")
             if not self._http:
                 raise HTTPException(status_code=503, detail="Launcher not ready")
+            api_port = await self._active_api_port()
 
             body = {
                 "model": "daios",
@@ -172,7 +229,7 @@ class LauncherApp:
                 "max_tokens": req.max_tokens,
                 "stream": req.stream,
             }
-            url = f"http://127.0.0.1:{node.api_port}/v1/chat/completions"
+            url = f"http://127.0.0.1:{api_port}/v1/chat/completions"
 
             if req.stream:
                 async def stream_proxy():
@@ -200,6 +257,26 @@ class LauncherApp:
 
         self._mount_dashboard(app)
         return app
+
+    async def _active_api_port(self) -> int:
+        node = self.process_manager.node
+        if not node:
+            raise HTTPException(status_code=503, detail="Node not running")
+        node.refresh()
+        if node.state == LauncherState.RUNNING:
+            return node.api_port
+        if self._http:
+            try:
+                resp = await self._http.get(
+                    f"http://127.0.0.1:{node.api_port}/health",
+                    timeout=2.0,
+                )
+                if resp.status_code == 200:
+                    return node.api_port
+            except httpx.HTTPError:
+                pass
+        detail = _sanitize_start_error(node.last_error) or "Node not running"
+        raise HTTPException(status_code=503, detail=detail)
 
     def _mount_dashboard(self, app: FastAPI) -> None:
         dist = self.dashboard_dist

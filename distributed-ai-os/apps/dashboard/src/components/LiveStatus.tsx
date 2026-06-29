@@ -71,6 +71,15 @@ export default function LiveStatus({
         />
       </div>
 
+      {peer && !peerOk && (
+        <div className="mb-4 px-4 py-3 bg-warm/10 border border-warm/30 rounded-lg text-warm text-sm">
+          Worker at <span className="font-display">{peer.host}:{peer.rpc_port}</span>{" "}
+          is not reachable
+          {peer.error ? ` (${peer.error})` : ""}. Start the worker on the other PC first,
+          then restart the coordinator.
+        </div>
+      )}
+
       {status.last_error && (
         <div className="mb-4 px-4 py-3 bg-danger/10 border border-danger/30 rounded-lg text-danger text-sm">
           {status.last_error}

@@ -14,6 +14,15 @@ export default function ChatTest() {
     try {
       const res = await sendChat(input.trim(), false);
       const data = await res.json();
+      if (!res.ok) {
+        const err =
+          data.detail ??
+          data.error?.message ??
+          (typeof data.error === "string" ? data.error : null) ??
+          `Chat failed (HTTP ${res.status})`;
+        setResponse(typeof err === "string" ? err : JSON.stringify(err));
+        return;
+      }
       const text =
         data.choices?.[0]?.message?.content ??
         data.choices?.[0]?.text ??

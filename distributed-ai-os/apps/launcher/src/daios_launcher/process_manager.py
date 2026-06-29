@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -22,6 +23,45 @@ class LauncherState(str, Enum):
     FAILED = "failed"
 
 
+def _sanitize_log_text(text: str) -> str:
+    return "".join(ch for ch in text if ch == "\n" or ch == "\t" or ord(ch) >= 32)
+
+
+def _kill_port_listeners(port: int) -> None:
+    """Terminate processes still bound to a TCP port (e.g. orphaned daios-node)."""
+    pids: set[int] = set()
+    try:
+        result = subprocess.run(
+            ["ss", "-ltnp", f"sport = :{port}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        for match in re.finditer(r"pid=(\d+)", result.stdout):
+            pids.add(int(match.group(1)))
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        try:
+            subprocess.run(
+                ["fuser", "-k", f"{port}/tcp"],
+                capture_output=True,
+                timeout=5,
+                check=False,
+            )
+            time.sleep(0.5)
+            return
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return
+
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    if pids:
+        time.sleep(0.5)
+
+
 @dataclass
 class NodeProcess:
     config_path: Path
@@ -38,6 +78,8 @@ class NodeProcess:
     def start(self, project_root: Path, venv_bin: Path) -> None:
         if self.process and self.process.poll() is None:
             return
+
+        _kill_port_listeners(self.api_port)
 
         self.state = LauncherState.STARTING
         self.last_error = None
@@ -116,7 +158,7 @@ class NodeProcess:
     def read_log_tail(self, max_bytes: int = 8000) -> str:
         if self._log_path and self._log_path.exists():
             data = self._log_path.read_bytes()
-            return data[-max_bytes:].decode("utf-8", errors="replace")
+            return _sanitize_log_text(data[-max_bytes:].decode("utf-8", errors="replace"))
         return ""
 
     def _cleanup(self) -> None:
@@ -140,6 +182,7 @@ class ProcessManager:
     def start_node(self, config_path: Path, role: str, node_id: str, api_port: int) -> NodeProcess:
         if self.node:
             self.node.stop()
+        _kill_port_listeners(api_port)
         self.node = NodeProcess(
             config_path=config_path,
             role=role,

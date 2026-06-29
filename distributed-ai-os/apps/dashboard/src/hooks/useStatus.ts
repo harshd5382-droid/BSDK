@@ -12,7 +12,7 @@ export function useStatus(pollMs = 2000) {
       const s = await getStatus();
       setStatus(s);
       setError(null);
-      if (s.node_state === "running") {
+      if (s.node_state !== "stopped") {
         try {
           const c = await getCluster();
           setCluster(c);
