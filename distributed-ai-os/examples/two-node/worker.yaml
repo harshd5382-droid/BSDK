@@ -1,0 +1,15 @@
+# Distributed AI OS — Generation 1 worker node
+
+node_id: worker-1
+role: worker
+
+network:
+  bind_host: 0.0.0.0
+  api_port: 8001
+  rpc_port: 50052
+
+peers: []
+
+inference:
+  backend: llama.cpp
+  rpc_cache: true

@@ -1,0 +1,12 @@
+{
+  "name": "chat_completions",
+  "requests": 8,
+  "success": 8,
+  "failures": 0,
+  "latency_ms_p50": 4456.805374516989,
+  "latency_ms_p95": 8121.662985999137,
+  "latency_ms_mean": 4867.853236508381,
+  "tokens_per_second": 13.116998684958968,
+  "duration_seconds": 39.03331945798709,
+  "label": "single-node-baseline"
+}

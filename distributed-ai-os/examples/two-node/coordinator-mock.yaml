@@ -1,0 +1,18 @@
+# Mock two-node setup for local development and CI (no llama.cpp required)
+
+node_id: coordinator-mock
+role: coordinator
+
+network:
+  bind_host: 127.0.0.1
+  api_port: 8000
+  rpc_port: 50052
+
+peers:
+  - id: worker-mock
+    host: 127.0.0.1
+    rpc_port: 50053
+    api_port: 8001
+
+inference:
+  backend: mock

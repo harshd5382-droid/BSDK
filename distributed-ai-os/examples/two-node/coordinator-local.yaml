@@ -1,0 +1,23 @@
+# Real llama.cpp coordinator on loopback (single-machine two-node validation)
+node_id: coordinator-local
+role: coordinator
+
+network:
+  bind_host: 127.0.0.1
+  api_port: 8000
+  rpc_port: 50052
+
+peers:
+  - id: worker-local
+    host: 127.0.0.1
+    rpc_port: 50052
+    api_port: 8001
+
+inference:
+  backend: llama.cpp
+  llama_server_bin: llama-server
+  model_path: models/qwen2.5-0.5b-instruct-q4_k_m.gguf
+  llama_server_port: 8080
+  n_gpu_layers: 99
+  context_size: 2048
+  threads: 2

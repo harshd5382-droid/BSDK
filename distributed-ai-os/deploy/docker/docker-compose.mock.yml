@@ -1,0 +1,39 @@
+# Distributed AI OS — Generation 1
+
+services:
+  worker:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    command:
+      - daios-node
+      - -c
+      - /etc/daios/worker.yaml
+    volumes:
+      - ../../examples/two-node/worker.yaml:/etc/daios/worker.yaml:ro
+    ports:
+      - "8001:8001"
+      - "50052:50052"
+    networks:
+      - daios-net
+
+  coordinator:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    command:
+      - daios-node
+      - -c
+      - /etc/daios/coordinator-mock.yaml
+    volumes:
+      - ../../examples/two-node/coordinator-mock.yaml:/etc/daios/coordinator-mock.yaml:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      - worker
+    networks:
+      - daios-net
+
+networks:
+  daios-net:
+    driver: bridge
