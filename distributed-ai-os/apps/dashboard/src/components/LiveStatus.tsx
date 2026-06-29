@@ -30,6 +30,8 @@ export default function LiveStatus({
   const peerOk = peer?.reachable ?? false;
   const nodeOk = status.node_state === "running";
   const isCoordinator = status.role === "coordinator";
+  const isWorker = status.role === "worker";
+  const inboundClients = cluster?.inbound_rpc_clients ?? 0;
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -59,11 +61,19 @@ export default function LiveStatus({
 
       <div className="flex flex-wrap gap-2 mb-6 justify-center">
         <StatusPill label="Node" ok={nodeOk} detail={status.node_state} />
-        <StatusPill
-          label="Peer RPC"
-          ok={peerOk}
-          detail={peer ? peer.host : "none"}
-        />
+        {isWorker ? (
+          <StatusPill
+            label="Coordinator"
+            ok={inboundClients > 0}
+            detail={inboundClients > 0 ? `${inboundClients} attached` : "listening"}
+          />
+        ) : (
+          <StatusPill
+            label="Peer RPC"
+            ok={peerOk}
+            detail={peer ? peer.host : "none"}
+          />
+        )}
         {isCoordinator && (
           <StatusPill label="OpenAI API" ok={nodeOk} detail=":8000/v1" />
         )}
@@ -93,10 +103,23 @@ export default function LiveStatus({
         </div>
       )}
 
-      {status.role === "worker" && (
+      {isWorker && (
         <div className="mb-4 px-4 py-3 bg-accent/10 border border-accent/30 rounded-lg text-fabric-600 text-sm">
-          Worker is running. On the <strong className="text-white">other PC</strong>,
-          choose Coordinator and enter this machine's IP as the worker address.
+          {inboundClients > 0 ? (
+            <>
+              Worker is running and a coordinator is{" "}
+              <strong className="text-white">connected</strong> (
+              {inboundClients} active RPC link
+              {inboundClients > 1 ? "s" : ""}).
+            </>
+          ) : (
+            <>
+              Worker is running and listening. On the{" "}
+              <strong className="text-white">other PC</strong>, choose Coordinator
+              and enter this machine's IP as the worker address. This panel shows
+              "connected" once the coordinator starts inference.
+            </>
+          )}
         </div>
       )}
 

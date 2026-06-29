@@ -99,3 +99,45 @@ async def check_all_peers(config: NodeConfig) -> list[PeerStatus]:
     if not config.peers:
         return []
     return await asyncio.gather(*(check_peer(peer) for peer in config.peers))
+
+
+_LOOPBACK_HEX = {"0100007F", "00000000000000000000000001000000"}
+
+
+def count_inbound_rpc_clients(port: int) -> int:
+    """Count established inbound TCP connections to the local RPC port.
+
+    A worker is passive: it never tracks the coordinator as a peer, so its
+    dashboard cannot derive "connected" from a peer probe. However, the
+    coordinator's llama-server holds a persistent connection to the worker's
+    RPC port for the duration of an inference session, so a non-zero count of
+    established connections to that port means a coordinator is attached.
+
+    Reads ``/proc/net/tcp`` and ``/proc/net/tcp6`` (Linux). Loopback peers are
+    ignored. Returns 0 on unsupported platforms or on any read error.
+    """
+    total = 0
+    for path in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            with open(path) as fh:
+                lines = fh.readlines()[1:]
+        except OSError:
+            continue
+        for line in lines:
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            local, remote, state = parts[1], parts[2], parts[3]
+            if state != "01":  # TCP_ESTABLISHED
+                continue
+            try:
+                local_port = int(local.rsplit(":", 1)[1], 16)
+            except (ValueError, IndexError):
+                continue
+            if local_port != port:
+                continue
+            remote_ip = remote.rsplit(":", 1)[0]
+            if remote_ip in _LOOPBACK_HEX:
+                continue
+            total += 1
+    return total

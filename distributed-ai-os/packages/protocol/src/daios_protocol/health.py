@@ -47,4 +47,5 @@ class ClusterStatus(BaseModel):
     coordinator_node_id: str
     peers: list[PeerStatus]
     rpc_endpoints: list[str]
+    inbound_rpc_clients: int = 0
     generation: int = 1

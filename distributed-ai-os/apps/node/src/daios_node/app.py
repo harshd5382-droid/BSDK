@@ -16,7 +16,7 @@ from daios_protocol.health import ClusterStatus, NodeHealth, ProcessState
 
 from daios_node.inference import InferenceManager
 from daios_node.mock_backend import router as mock_router
-from daios_node.peers import check_all_peers
+from daios_node.peers import check_all_peers, count_inbound_rpc_clients
 
 logger = logging.getLogger(__name__)
 
@@ -77,12 +77,18 @@ class NodeApp:
         @app.get("/api/v1/cluster")
         async def cluster() -> ClusterStatus:
             peers = await check_all_peers(self.config)
+            inbound = (
+                count_inbound_rpc_clients(self.config.network.rpc_port)
+                if self.config.runs_rpc_server
+                else 0
+            )
             return ClusterStatus(
                 coordinator_node_id=self.config.node_id
                 if self.config.runs_coordinator
                 else "remote",
                 peers=peers,
                 rpc_endpoints=self.config.rpc_endpoints(),
+                inbound_rpc_clients=inbound,
             )
 
         if self.config.inference.backend == "mock":
