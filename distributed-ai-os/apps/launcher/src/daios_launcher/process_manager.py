@@ -51,6 +51,7 @@ class NodeProcess:
 
         env = {
             **os.environ,
+            "PATH": f"{venv_bin}{os.pathsep}{os.environ.get('PATH', '')}",
             "LD_LIBRARY_PATH": str(venv_bin),
             "DAIOS_LOG_DIR": str(log_dir),
         }

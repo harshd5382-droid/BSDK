@@ -81,7 +81,7 @@ class LauncherApp:
             if self.process_manager.node and self.process_manager.node.state == LauncherState.RUNNING:
                 raise HTTPException(status_code=409, detail="Node already running")
 
-            config = build_node_config(req)
+            config = build_node_config(req, project_root=self.project_root)
             config_path = write_runtime_config(config, self.runtime_dir)
             node = self.process_manager.start_node(
                 config_path=config_path,
@@ -184,9 +184,19 @@ class LauncherApp:
 
             try:
                 resp = await self._http.post(url, json=body)
-                return JSONResponse(content=resp.json(), status_code=resp.status_code)
             except httpx.HTTPError as exc:
                 raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+            if resp.headers.get("content-type", "").startswith("application/json"):
+                try:
+                    content = resp.json()
+                except ValueError:
+                    content = {"error": resp.text or "Upstream returned invalid JSON"}
+            else:
+                detail = resp.text.strip() or f"Inference request failed (HTTP {resp.status_code})"
+                content = {"error": {"message": detail, "type": "inference_error"}}
+
+            return JSONResponse(content=content, status_code=resp.status_code)
 
         self._mount_dashboard(app)
         return app

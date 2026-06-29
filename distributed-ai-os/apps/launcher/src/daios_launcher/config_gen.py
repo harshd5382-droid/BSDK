@@ -21,7 +21,30 @@ class StartRequest(BaseModel):
     rpc_port: int = 50052
 
 
-def build_node_config(req: StartRequest, node_id: str | None = None) -> NodeConfig:
+def _resolve_model_path(model_path: str | None, project_root: Path) -> str | None:
+    if not model_path:
+        return None
+    path = Path(model_path)
+    if not path.is_absolute():
+        path = project_root / path
+    if not path.is_file():
+        alt = project_root / "models" / Path(model_path).name
+        if alt.is_file():
+            path = alt
+    return str(path)
+
+
+def _venv_binary(project_root: Path, name: str) -> str:
+    candidate = project_root / ".venv" / "bin" / name
+    return str(candidate) if candidate.is_file() else name
+
+
+def build_node_config(
+    req: StartRequest,
+    node_id: str | None = None,
+    project_root: Path | None = None,
+) -> NodeConfig:
+    root = project_root or Path.cwd()
     peers: list[PeerConfig] = []
     if req.role in (NodeRole.COORDINATOR, NodeRole.HYBRID) and req.peer_host:
         peers.append(
@@ -35,7 +58,9 @@ def build_node_config(req: StartRequest, node_id: str | None = None) -> NodeConf
 
     inference = InferenceConfig(
         backend=req.backend,
-        model_path=req.model_path,
+        llama_server_bin=_venv_binary(root, "llama-server"),
+        rpc_server_bin=_venv_binary(root, "ggml-rpc-server"),
+        model_path=_resolve_model_path(req.model_path, root),
         llama_server_port=8080,
         n_gpu_layers=99,
         context_size=2048,

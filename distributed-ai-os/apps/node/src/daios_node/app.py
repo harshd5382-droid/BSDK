@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
 from daios_protocol.config import NodeConfig
-from daios_protocol.health import ClusterStatus, NodeHealth
+from daios_protocol.health import ClusterStatus, NodeHealth, ProcessState
 
 from daios_node.inference import InferenceManager
 from daios_node.mock_backend import router as mock_router
@@ -100,6 +100,14 @@ class NodeApp:
             if not self._http_client:
                 raise HTTPException(status_code=503, detail="Node not ready")
 
+            llama_state = self.inference.status().llama_server
+            if llama_state == ProcessState.FAILED:
+                err = self.inference.llama_server.last_error if self.inference.llama_server else None
+                raise HTTPException(
+                    status_code=503,
+                    detail=err or "llama-server failed to start",
+                )
+
             url = f"{base}/v1/{path}"
             body = await request.body()
             headers = {
@@ -111,12 +119,19 @@ class NodeApp:
             if self._wants_stream(request, body):
                 return await self._proxy_stream(url, headers, body)
 
-            response = await self._http_client.request(
-                request.method,
-                url,
-                headers=headers,
-                content=body,
-            )
+            try:
+                response = await self._http_client.request(
+                    request.method,
+                    url,
+                    headers=headers,
+                    content=body,
+                )
+            except httpx.ConnectError as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"llama-server unavailable on port {self.config.inference.llama_server_port}: {exc}",
+                ) from exc
+
             return Response(
                 content=response.content,
                 status_code=response.status_code,
@@ -139,16 +154,30 @@ class NodeApp:
         if not self._http_client:
             raise HTTPException(status_code=503, detail="Node not ready")
 
+        llama_state = self.inference.status().llama_server
+        if llama_state == ProcessState.FAILED:
+            err = self.inference.llama_server.last_error if self.inference.llama_server else None
+            raise HTTPException(
+                status_code=503,
+                detail=err or "llama-server failed to start",
+            )
+
         request = self._http_client.build_request("POST", url, headers=headers, content=body)
 
         async def event_stream():
-            async with self._http_client.stream(
-                request.method,
-                request.url,
-                headers=request.headers,
-                content=body,
-            ) as response:
-                async for chunk in response.aiter_bytes():
-                    yield chunk
+            try:
+                async with self._http_client.stream(
+                    request.method,
+                    request.url,
+                    headers=request.headers,
+                    content=body,
+                ) as response:
+                    async for chunk in response.aiter_bytes():
+                        yield chunk
+            except httpx.ConnectError as exc:
+                msg = json.dumps(
+                    {"error": {"message": f"llama-server unavailable: {exc}", "type": "inference_error"}}
+                )
+                yield f"data: {msg}\n\n".encode()
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")

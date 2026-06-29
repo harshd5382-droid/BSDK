@@ -17,6 +17,9 @@ export default function ChatTest() {
       const text =
         data.choices?.[0]?.message?.content ??
         data.choices?.[0]?.text ??
+        data.error?.message ??
+        data.detail ??
+        (typeof data.error === "string" ? data.error : null) ??
         JSON.stringify(data);
       setResponse(text);
     } catch (e) {
