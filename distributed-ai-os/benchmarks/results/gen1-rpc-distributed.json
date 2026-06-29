@@ -3,10 +3,10 @@
   "requests": 8,
   "success": 8,
   "failures": 0,
-  "latency_ms_p50": 5302.576310496079,
-  "latency_ms_p95": 6400.919982988853,
-  "latency_ms_mean": 5110.570111377456,
-  "tokens_per_second": 12.430170468420325,
-  "duration_seconds": 41.19010284700198,
-  "label": "rpc-distributed-loopback"
+  "latency_ms_p50": 2552.0633010000893,
+  "latency_ms_p95": 3541.9949290007935,
+  "latency_ms_mean": 2782.528719999391,
+  "tokens_per_second": 22.821426687618626,
+  "duration_seconds": 22.43505662499956,
+  "label": "rpc-distributed"
 }

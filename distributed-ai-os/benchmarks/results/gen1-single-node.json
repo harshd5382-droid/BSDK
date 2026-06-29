@@ -3,10 +3,10 @@
   "requests": 8,
   "success": 8,
   "failures": 0,
-  "latency_ms_p50": 4456.805374516989,
-  "latency_ms_p95": 8121.662985999137,
-  "latency_ms_mean": 4867.853236508381,
-  "tokens_per_second": 13.116998684958968,
-  "duration_seconds": 39.03331945798709,
-  "label": "single-node-baseline"
+  "latency_ms_p50": 2635.1248525006667,
+  "latency_ms_p95": 3580.8440670007258,
+  "latency_ms_mean": 2824.561841999639,
+  "tokens_per_second": 22.48259628358087,
+  "duration_seconds": 22.773170569002104,
+  "label": "single-node"
 }

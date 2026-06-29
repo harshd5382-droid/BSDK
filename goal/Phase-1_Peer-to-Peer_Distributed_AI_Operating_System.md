@@ -372,6 +372,12 @@ Produce a complete engineering research document containing:
 
 The document should describe not only what should be built, but also why each architectural decision is appropriate for the current generation of the project and how it enables the next generation without unnecessary rewrites.
 
+## Phase 1 Status
+
+Status: **Complete** (2026-06-29)
+
+Research document: [`distributed-ai-os/docs/phase-1-research-architecture.md`](../distributed-ai-os/docs/phase-1-research-architecture.md)
+
 ## Generation 1 Implementation Status
 
 Status: Validated (2026-06-29) — real two-node distributed inference proven end-to-end with llama.cpp + GGML RPC.

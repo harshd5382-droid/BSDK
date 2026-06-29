@@ -1,5 +1,8 @@
 # Generation 1 Architecture
 
+> Full Phase 1 research document (all generations, build/buy analysis, roadmap):
+> [`phase-1-research-architecture.md`](phase-1-research-architecture.md)
+
 ## Overview
 
 Generation 1 validates the core hypothesis: **two machines can execute one inference request** by pooling memory and compute through llama.cpp's GGML RPC backend.

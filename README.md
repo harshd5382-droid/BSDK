@@ -6,7 +6,7 @@ Generation 1 prototype implementation lives in [`distributed-ai-os/`](distribute
 
 | Phase | Status | Document |
 |-------|--------|----------|
-| Phase 1 | **Active** | `goal/Phase-1_Peer-to-Peer_Distributed_AI_Operating_System.md` |
+| Phase 1 | **Complete** | `distributed-ai-os/docs/phase-1-research-architecture.md` |
 | Phase 2 | Reference only | `goal/Phase_2_Engineering_Specification.md` |
 | Phase 3 | Reference only | `goal/Phase_3_Autonomous_Engineering_Program.md` |
 

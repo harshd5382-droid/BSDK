@@ -155,6 +155,11 @@ flowchart LR
 
 Every node runs identical `daios-node` software. Role (`coordinator`, `worker`, `hybrid`) is configuration-only — matching the Phase 1 vision of no permanent master nodes.
 
+## Documentation
+
+- [Phase 1 research & architecture strategy](docs/phase-1-research-architecture.md) — full multi-generation research document
+- [Generation 1 architecture](docs/architecture-gen1.md) — implementation reference for the current prototype
+
 ## Research Findings
 
 | Technology | Generation 1 Decision | Rationale |
