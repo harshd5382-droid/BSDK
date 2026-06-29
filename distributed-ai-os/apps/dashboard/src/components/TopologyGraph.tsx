@@ -8,18 +8,25 @@ interface Props {
 
 export default function TopologyGraph({ status, cluster }: Props) {
   const peer = cluster?.peers[0];
-  const connected = peer?.reachable ?? false;
   const isWorker = status.role === "worker";
+  // A worker has no peer to probe; its link reflects the coordinator's inbound
+  // RPC connection instead of an (always-empty) peer reachability result.
+  const inbound = cluster?.inbound_rpc_clients ?? 0;
+  const connected = isWorker ? inbound > 0 : (peer?.reachable ?? false);
 
   return (
     <div className="flex items-center justify-center gap-0 py-8">
       <NodeBox
-        label={isWorker ? "This PC" : "This PC"}
+        label="This PC"
         sub={isWorker ? "Worker" : "Coordinator"}
         active={status.node_state === "running"}
       />
 
-      <ConnectionLine connected={connected} latency={peer?.latency_ms} />
+      <ConnectionLine
+        connected={connected}
+        latency={isWorker ? null : peer?.latency_ms}
+        idleLabel={isWorker ? "listening…" : "waiting…"}
+      />
 
       <NodeBox
         label={isWorker ? "Remote PC" : peer?.host ?? "Other PC"}
@@ -60,9 +67,11 @@ function NodeBox({
 function ConnectionLine({
   connected,
   latency,
+  idleLabel = "waiting…",
 }: {
   connected: boolean;
   latency?: number | null;
+  idleLabel?: string;
 }) {
   return (
     <div className="flex flex-col items-center w-24 mx-2">
@@ -80,7 +89,7 @@ function ConnectionLine({
           ? latency != null
             ? `${latency.toFixed(0)} ms`
             : "connected"
-          : "waiting…"}
+          : idleLabel}
       </span>
     </div>
   );

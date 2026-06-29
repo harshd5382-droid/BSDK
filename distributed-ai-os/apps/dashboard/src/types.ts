@@ -40,6 +40,7 @@ export interface ClusterStatus {
   coordinator_node_id: string;
   peers: PeerStatus[];
   rpc_endpoints: string[];
+  inbound_rpc_clients: number;
   generation: number;
   local_resources: ResourceUsage | null;
 }
