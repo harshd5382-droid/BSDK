@@ -1,4 +1,4 @@
-.PHONY: install test benchmark lint run-mock clean
+.PHONY: install test benchmark lint run-mock clean dashboard dashboard-dev dashboard-build
 
 VENV := .venv
 PY := $(VENV)/bin/python
@@ -18,6 +18,16 @@ lint: install
 
 run-mock: install
 	./scripts/run-mock-cluster.sh
+
+dashboard-build:
+	cd apps/dashboard && npm install && npm run build
+
+dashboard: install dashboard-build
+	./scripts/run-dashboard.sh
+
+dashboard-dev: install
+	@echo "Run launcher in one terminal: .venv/bin/daios-launcher --root ."
+	@echo "Run Vite dev in another: cd apps/dashboard && npm run dev"
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

@@ -9,6 +9,7 @@ if command -v uv >/dev/null 2>&1; then
   uv venv "${VENV}" 2>/dev/null || true
   uv pip install --python "${VENV}/bin/python" -e "${ROOT}/packages/protocol"
   uv pip install --python "${VENV}/bin/python" -e "${ROOT}/apps/node"
+  uv pip install --python "${VENV}/bin/python" -e "${ROOT}/apps/launcher"
   uv pip install --python "${VENV}/bin/python" pytest pytest-asyncio httpx ruff hatchling
 else
   if [[ ! -d "${VENV}" ]]; then
@@ -19,7 +20,8 @@ else
   pip install -U pip hatchling
   pip install -e "${ROOT}/packages/protocol"
   pip install -e "${ROOT}/apps/node"
+  pip install -e "${ROOT}/apps/launcher"
   pip install pytest pytest-asyncio httpx ruff
 fi
 
-echo "Installed daios-protocol and daios-node into ${VENV}"
+echo "Installed daios-protocol, daios-node, and daios-launcher into ${VENV}"

@@ -10,5 +10,8 @@ build/
 venv/
 *.gguf
 models/
+.daios-runtime/
 logs/
+apps/dashboard/node_modules/
+apps/dashboard/dist/
 .env

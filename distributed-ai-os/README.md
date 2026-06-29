@@ -17,6 +17,8 @@ Peer-to-Peer Distributed AI Operating System — practical two-node prototype va
 ```
 distributed-ai-os/
   apps/node/          Node daemon (daios-node)
+  apps/launcher/      One-click launcher + control API
+  apps/dashboard/     React wizard UI
   packages/protocol/  Shared config and health types
   examples/two-node/  Coordinator + worker YAML configs
   deploy/docker/      Docker Compose for mock cluster
@@ -26,7 +28,33 @@ distributed-ai-os/
   docs/               Architecture and setup guides
 ```
 
+## Dashboard (One-Click UI)
+
+The easiest way to start — open a browser, pick your role, enter the other PC's IP, click Start.
+
+```bash
+cd distributed-ai-os
+chmod +x scripts/run-dashboard.sh
+make dashboard
+```
+
+This builds the React dashboard and opens `http://127.0.0.1:8090`.
+
+**Two PCs over LAN:**
+1. On **PC B** (worker): run `make dashboard` → choose **Help another PC** → **Start Worker** → share the displayed IP (`192.168.x.x:50052`).
+2. On **PC A** (coordinator): run `make dashboard` → choose **Run the AI here** → enter PC B's IP → **Connect and Start**.
+
+Development mode (Vite hot reload + launcher API):
+
+```bash
+# Terminal 1
+.venv/bin/daios-launcher --root .
+
+# Terminal 2
+cd apps/dashboard && npm run dev
 ## Quick Start (Mock Mode — No llama.cpp Required)
+
+For terminal-only testing without the dashboard:
 
 ```bash
 cd distributed-ai-os
