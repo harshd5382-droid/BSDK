@@ -412,7 +412,7 @@ Verified:
 - Coordinator `llama-server` registers the remote backend via `--rpc` and returns coherent Qwen output.
 - `daios-node` orchestrates both processes from YAML configuration.
 - OpenAI-compatible API verified: `/v1/models`, non-streaming chat, and streaming SSE (coding-assistant compatible).
-- Full test suite green (14/14); lint clean.
+- Full test suite green (23/23); lint clean.
 
 Benchmark (8 requests, max_tokens=64):
 
@@ -426,6 +426,16 @@ Fixes landed during validation:
 - The OpenAI proxy detects streaming by parsing the request body (whitespace-robust) in addition to the `Accept: text/event-stream` header.
 
 Full report: `distributed-ai-os/benchmarks/results/gen1-validation-report.md`.
+
+## Dashboard and Launcher (2026-06-29)
+
+Added one-click UI for Generation 1:
+
+- `apps/launcher` (`daios-launcher`) — local control API on `127.0.0.1:8090` that spawns/stops `daios-node` from a 4-step wizard.
+- `apps/dashboard` — React + Vite + Tailwind + Motion wizard: Welcome → Role (Coordinator/Worker) → Connect → Live status with topology, logs, and test chat.
+- Start: `make dashboard` or `./scripts/run-dashboard.sh` (builds UI, opens browser).
+- Two-PC LAN: run dashboard on each machine; worker shares `LAN_IP:50052`; coordinator enters worker IP and clicks Connect and Start.
+- Verified: launcher serves dashboard (HTTP 200), start/stop mock node, chat via `/api/launcher/chat`. Test suite: 23/23 passing.
 
 Remaining (cross-machine extensions, not blocking Generation 1 sign-off):
 

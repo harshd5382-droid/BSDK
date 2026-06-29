@@ -14,9 +14,14 @@ Generation 1 prototype implementation lives in [`distributed-ai-os/`](distribute
 
 ```bash
 cd distributed-ai-os
-make install
-make test
-make run-mock
+make dashboard    # one-click UI — recommended
 ```
 
-See [distributed-ai-os/README.md](distributed-ai-os/README.md) for full setup including llama.cpp + GGML RPC two-node deployment.
+Or for terminal-only mock testing:
+
+```bash
+cd distributed-ai-os
+make install && make run-mock
+```
+
+See [distributed-ai-os/README.md](distributed-ai-os/README.md) for full setup including dashboard, llama.cpp + GGML RPC two-node deployment.

@@ -31,6 +31,8 @@ All nodes run the same `daios-node` binary. Behavior is determined by YAML confi
 
 Generation 1 uses **manual peer configuration** in YAML. The coordinator probes worker RPC ports via TCP connect and optional HTTP `/health` checks.
 
+The **dashboard** (`apps/dashboard`) + **launcher** (`apps/launcher`) provide a wizard UI that generates runtime YAML and spawns `daios-node` — no terminal required. Each PC runs its own launcher on `127.0.0.1:8090`.
+
 Automatic discovery, cluster membership, and coordinator election are deferred to Generation 2 per the Phase 1 roadmap.
 
 ## Configuration Schema
