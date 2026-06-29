@@ -5,18 +5,24 @@ interface Props {
   bottomRef: React.RefObject<HTMLDivElement | null>;
 }
 
+const VISIBLE_LINES = 20;
+
 export default function LogPanel({ lines, bottomRef }: Props) {
+  const visible = lines.slice(-VISIBLE_LINES);
   return (
     <div className="bg-fabric-900 border border-fabric-700 rounded-lg overflow-hidden">
-      <div className="px-4 py-2 border-b border-fabric-700 text-xs uppercase tracking-wider text-fabric-600 font-display">
-        Live Log
+      <div className="px-4 py-2 border-b border-fabric-700 text-xs uppercase tracking-wider text-fabric-600 font-display flex items-center justify-between">
+        <span>Recent Log</span>
+        <span className="text-fabric-700 normal-case tracking-normal">
+          last {VISIBLE_LINES} lines
+        </span>
       </div>
       <div className="h-40 overflow-y-auto p-3 font-display text-xs leading-relaxed text-fabric-600">
         <AnimatePresence initial={false}>
-          {lines.length === 0 ? (
+          {visible.length === 0 ? (
             <div className="text-fabric-700">Waiting for output…</div>
           ) : (
-            lines.map((line, i) => (
+            visible.map((line, i) => (
               <motion.div
                 key={`${i}-${line.slice(0, 40)}`}
                 initial={{ opacity: 0, x: -8 }}

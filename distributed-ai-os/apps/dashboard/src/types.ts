@@ -18,6 +18,14 @@ export interface LauncherStatus {
   last_error: string | null;
 }
 
+export interface ResourceUsage {
+  cpu_percent: number | null;
+  cpu_count: number | null;
+  ram_used_gb: number | null;
+  ram_total_gb: number | null;
+  ram_percent: number | null;
+}
+
 export interface PeerStatus {
   id: string;
   host: string;
@@ -25,6 +33,7 @@ export interface PeerStatus {
   reachable: boolean;
   latency_ms: number | null;
   error: string | null;
+  resources: ResourceUsage | null;
 }
 
 export interface ClusterStatus {
@@ -32,6 +41,7 @@ export interface ClusterStatus {
   peers: PeerStatus[];
   rpc_endpoints: string[];
   generation: number;
+  local_resources: ResourceUsage | null;
 }
 
 export type NodeRole = "coordinator" | "worker" | "hybrid";

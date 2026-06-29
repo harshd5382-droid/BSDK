@@ -8,17 +8,35 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 import httpx
+import psutil
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
 from daios_protocol.config import NodeConfig
-from daios_protocol.health import ClusterStatus, NodeHealth, ProcessState
+from daios_protocol.health import ClusterStatus, NodeHealth, ProcessState, ResourceUsage
 
 from daios_node.inference import InferenceManager
 from daios_node.mock_backend import router as mock_router
 from daios_node.peers import check_all_peers
 
 logger = logging.getLogger(__name__)
+
+
+def gather_resources() -> ResourceUsage:
+    """Snapshot live CPU / RAM usage for this machine.
+
+    ``cpu_percent(interval=None)`` is non-blocking and reports utilization since
+    the previous call, so values become meaningful once the dashboard polls
+    repeatedly (every couple of seconds).
+    """
+    mem = psutil.virtual_memory()
+    return ResourceUsage(
+        cpu_percent=round(psutil.cpu_percent(interval=None), 1),
+        cpu_count=psutil.cpu_count(logical=True),
+        ram_used_gb=round((mem.total - mem.available) / (1024**3), 2),
+        ram_total_gb=round(mem.total / (1024**3), 2),
+        ram_percent=mem.percent,
+    )
 
 
 class NodeApp:
@@ -58,6 +76,7 @@ class NodeApp:
                 role=self.config.role.value,
                 inference=self.inference.status(),
                 uptime_seconds=self.inference.uptime_seconds(),
+                resources=gather_resources(),
             )
 
         @app.get("/metrics")
@@ -83,6 +102,7 @@ class NodeApp:
                 else "remote",
                 peers=peers,
                 rpc_endpoints=self.config.rpc_endpoints(),
+                local_resources=gather_resources(),
             )
 
         if self.config.inference.backend == "mock":

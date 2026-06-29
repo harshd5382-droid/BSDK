@@ -15,6 +15,16 @@ class ProcessState(str, Enum):
     FAILED = "failed"
 
 
+class ResourceUsage(BaseModel):
+    """Live CPU / RAM usage for a single node."""
+
+    cpu_percent: float | None = None
+    cpu_count: int | None = None
+    ram_used_gb: float | None = None
+    ram_total_gb: float | None = None
+    ram_percent: float | None = None
+
+
 class PeerStatus(BaseModel):
     id: str
     host: str
@@ -22,6 +32,7 @@ class PeerStatus(BaseModel):
     reachable: bool
     latency_ms: float | None = None
     error: str | None = None
+    resources: ResourceUsage | None = None
 
 
 class InferenceStatus(BaseModel):
@@ -39,6 +50,7 @@ class NodeHealth(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     inference: InferenceStatus
     uptime_seconds: float = 0.0
+    resources: ResourceUsage | None = None
 
 
 class ClusterStatus(BaseModel):
@@ -48,3 +60,4 @@ class ClusterStatus(BaseModel):
     peers: list[PeerStatus]
     rpc_endpoints: list[str]
     generation: int = 1
+    local_resources: ResourceUsage | None = None

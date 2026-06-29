@@ -2,6 +2,7 @@ import { motion } from "motion/react";
 import TopologyGraph from "./TopologyGraph";
 import StatusPill from "./StatusPill";
 import LogPanel from "./LogPanel";
+import ResourcePanel from "./ResourcePanel";
 import ChatTest from "./ChatTest";
 import type { ClusterStatus, LauncherStatus } from "../types";
 
@@ -107,6 +108,7 @@ export default function LiveStatus({
       )}
 
       <div className="space-y-4">
+        <ResourcePanel status={status} cluster={cluster} />
         <LogPanel lines={logLines} bottomRef={logBottomRef} />
         {isCoordinator && <ChatTest />}
       </div>

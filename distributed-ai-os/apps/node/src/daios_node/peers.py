@@ -9,7 +9,7 @@ import time
 import httpx
 
 from daios_protocol.config import NodeConfig, PeerConfig
-from daios_protocol.health import PeerStatus
+from daios_protocol.health import PeerStatus, ResourceUsage
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +66,20 @@ async def check_peer(peer: PeerConfig, timeout: float = 3.0) -> PeerStatus:
                     reachable=False,
                     error=f"health endpoint returned {response.status_code}",
                 )
+            resources: ResourceUsage | None = None
+            try:
+                raw = response.json().get("resources")
+                if raw:
+                    resources = ResourceUsage.model_validate(raw)
+            except (ValueError, TypeError):
+                resources = None
             return PeerStatus(
                 id=peer.id,
                 host=peer.host,
                 rpc_port=peer.rpc_port,
                 reachable=True,
                 latency_ms=latency_ms,
+                resources=resources,
             )
         except httpx.HTTPError as exc:
             return PeerStatus(
