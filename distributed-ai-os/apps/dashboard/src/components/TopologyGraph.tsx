@@ -114,7 +114,7 @@ function NodeBox({
       <div className="font-display text-sm font-bold text-on-dark truncate">
         {label}
       </div>
-      <div className="label-caps text-[11px] text-muted mt-1.5">{sub}</div>
+      <div className="label-caps text-[11px] text-muted mt-1.5 text-center">{sub}</div>
     </div>
   );
 }
