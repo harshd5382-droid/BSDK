@@ -72,10 +72,9 @@ def _has_nvidia_gpu() -> bool:
         return False
 
 
-def _resolve_threads() -> int:
+def _default_threads() -> int:
     """Use most cores for inference, leaving one for the OS and API."""
-    cores = os.cpu_count() or 4
-    return max(2, cores - 1)
+    return max(1, (os.cpu_count() or 2) - 1)
 
 
 def _resolve_context_size(model_path: str | None, backend: str) -> int:
@@ -117,10 +116,6 @@ def build_node_config(
     )
 
     resolved_model = _resolve_model_path(req.model_path, root)
-    threads = _resolve_threads()
-    extra_args: list[str] = []
-    if req.role == NodeRole.WORKER and req.backend == "llama.cpp":
-        extra_args.extend(["-t", str(threads)])
 
     inference = InferenceConfig(
         backend=req.backend,
@@ -130,9 +125,8 @@ def build_node_config(
         llama_server_port=8080,
         n_gpu_layers=_resolve_gpu_layers(req.backend),
         context_size=_resolve_context_size(resolved_model, req.backend),
-        threads=threads,
+        threads=_default_threads(),
         rpc_cache=True,
-        extra_args=extra_args,
     )
 
     # When discovery is enabled, bind to all interfaces so other PCs on the LAN

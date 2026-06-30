@@ -13,4 +13,5 @@ inference:
   backend: llama.cpp
   rpc_server_bin: ggml-rpc-server
   rpc_cache: false
-  extra_args: ["-t", "2"]
+  # Omit threads to use auto-detect (cores - 1); set explicitly to override.
+  threads: 3

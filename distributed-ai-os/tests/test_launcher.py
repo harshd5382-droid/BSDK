@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from daios_protocol.config import NodeRole, load_config
-from daios_launcher.config_gen import StartRequest, build_node_config, write_runtime_config
+from daios_launcher.config_gen import StartRequest, _default_threads, build_node_config, write_runtime_config
 from daios_launcher.system_info import gather_system_info, get_lan_ip, is_local_address
 from daios_launcher.validation import validate_start_request
 
@@ -50,6 +50,23 @@ def test_build_worker_config():
     assert config.runs_rpc_server
     assert not config.runs_coordinator
     assert config.network.bind_host == "0.0.0.0"
+
+
+def test_build_node_config_auto_detects_threads():
+    expected = _default_threads()
+    assert expected >= 1
+
+    coord = build_node_config(
+        StartRequest(role=NodeRole.COORDINATOR, backend="mock"),
+        node_id="test-coord-threads",
+    )
+    worker = build_node_config(
+        StartRequest(role=NodeRole.WORKER, backend="llama.cpp"),
+        node_id="test-worker-threads",
+    )
+    assert coord.inference.threads == expected
+    assert worker.inference.threads == expected
+    assert worker.inference.extra_args == []
 
 
 def test_write_runtime_config_roundtrip(tmp_path):

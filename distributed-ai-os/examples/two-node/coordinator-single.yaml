@@ -16,4 +16,5 @@ inference:
   llama_server_port: 8080
   n_gpu_layers: 99
   context_size: 2048
-  threads: 2
+  # Omit threads to use auto-detect (cores - 1); set explicitly to override.
+  threads: 3

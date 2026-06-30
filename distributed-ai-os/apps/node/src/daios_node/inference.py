@@ -264,6 +264,8 @@ class InferenceManager:
         ]
         if inf.rpc_cache:
             cmd.append("-c")
+        if inf.threads:
+            cmd.extend(["-t", str(inf.threads)])
         cmd.extend(inf.extra_args)
         self.rpc_server = ManagedProcess(
             name="rpc-server", command=cmd, log_path=self._log_path("rpc-server")
