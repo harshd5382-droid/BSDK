@@ -16,14 +16,16 @@ logger = logging.getLogger(__name__)
 SERVICE_TYPE = "_daios._tcp.local."
 
 try:
-    from zeroconf import ServiceInfo, ServiceListener, Zeroconf
+    from zeroconf import ServiceInfo
+    from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
 
     _ZEROCONF_AVAILABLE = True
 except ImportError:
     _ZEROCONF_AVAILABLE = False
-    Zeroconf = None  # type: ignore[misc, assignment]
+    AsyncZeroconf = None  # type: ignore[misc, assignment]
+    AsyncServiceBrowser = None  # type: ignore[misc, assignment]
+    AsyncServiceInfo = None  # type: ignore[misc, assignment]
     ServiceInfo = None  # type: ignore[misc, assignment]
-    ServiceListener = object  # type: ignore[misc, assignment]
 
 
 def _get_lan_ip() -> str:
@@ -41,30 +43,7 @@ def _decode_txt_value(value: bytes | str) -> str:
     return value
 
 
-if _ZEROCONF_AVAILABLE:
-
-    class _DaiosServiceListener(ServiceListener):
-        def __init__(self, on_discovered: Callable[[MemberInfo], None]) -> None:
-            self._on_discovered = on_discovered
-            self._seen: set[str] = set()
-
-        def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
-            info = zc.get_service_info(type_, name)
-            if info is None:
-                return
-            member = _service_info_to_member(info)
-            if member and member.node_id not in self._seen:
-                self._seen.add(member.node_id)
-                self._on_discovered(member)
-
-        def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
-            pass
-
-        def update_service(self, zc: Zeroconf, type_: str, name: str) -> None:
-            self.add_service(zc, type_, name)
-
-
-def _service_info_to_member(info: ServiceInfo) -> MemberInfo | None:
+def _service_info_to_member(info: ServiceInfo | AsyncServiceInfo) -> MemberInfo | None:
     props = info.properties or {}
     node_id = _decode_txt_value(props.get(b"node_id", b""))
     if not node_id:
@@ -84,14 +63,63 @@ def _service_info_to_member(info: ServiceInfo) -> MemberInfo | None:
     )
 
 
+if _ZEROCONF_AVAILABLE:
+
+    class _AsyncDaiosListener:
+        """Listener for AsyncServiceBrowser.
+
+        The browser invokes the sync ``add_service``/``update_service``/
+        ``remove_service`` callbacks from inside the event loop; we schedule
+        the (async) service-record resolution as a task on the same loop.
+        """
+
+        def __init__(
+            self,
+            aiozc: AsyncZeroconf,
+            on_discovered: Callable[[MemberInfo], None],
+            self_node_id: str,
+        ) -> None:
+            self._aiozc = aiozc
+            self._on_discovered = on_discovered
+            self._self_node_id = self_node_id
+            self._seen: set[str] = set()
+
+        def _schedule_resolve(self, type_: str, name: str) -> None:
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.get_event_loop_policy().get_event_loop()
+            loop.create_task(self._resolve(type_, name))
+
+        def add_service(self, zc: AsyncZeroconf, type_: str, name: str) -> None:
+            self._schedule_resolve(type_, name)
+
+        def update_service(self, zc: AsyncZeroconf, type_: str, name: str) -> None:
+            self._schedule_resolve(type_, name)
+
+        def remove_service(self, zc: AsyncZeroconf, type_: str, name: str) -> None:
+            pass
+
+        async def _resolve(self, type_: str, name: str) -> None:
+            info = AsyncServiceInfo(type_, name)
+            await info.async_request(self._aiozc.zeroconf, 3000)
+            if not info:
+                return
+            member = _service_info_to_member(info)
+            if not member or member.node_id == self._self_node_id:
+                return
+            self._seen.add(member.node_id)
+            self._on_discovered(member)
+
+
 class DiscoveryService:
     """Advertise and discover DAIOS nodes on the LAN via mDNS."""
 
     def __init__(self, config: NodeConfig) -> None:
         self.config = config
         self._discovered: dict[str, MemberInfo] = {}
-        self._zc: Zeroconf | None = None
-        self._listener: _DaiosServiceListener | None = None
+        self._aiozc: AsyncZeroconf | None = None
+        self._browser: AsyncServiceBrowser | None = None
         self._running = False
 
     @property
@@ -107,9 +135,11 @@ class DiscoveryService:
         if member.node_id == self.config.node_id:
             return
         self._discovered[member.node_id] = member
-        logger.info("Discovered peer %s at %s:%s", member.node_id, member.host, member.api_port)
+        logger.info(
+            "Discovered peer %s at %s:%s", member.node_id, member.host, member.api_port
+        )
 
-    def start(self) -> None:
+    async def start(self) -> None:
         if not self.config.discovery_enabled:
             return
         if not self.available:
@@ -130,8 +160,10 @@ class DiscoveryService:
             b"rpc_port": str(rpc_port).encode(),
             b"cluster": self.config.discovery.cluster_name.encode(),
         }
-        service_name = f"{self.config.discovery.cluster_name}-{self.config.node_id}.{SERVICE_TYPE}"
-        self._zc = Zeroconf()
+        service_name = (
+            f"{self.config.discovery.cluster_name}-{self.config.node_id}.{SERVICE_TYPE}"
+        )
+        self._aiozc = AsyncZeroconf()
         info = ServiceInfo(
             SERVICE_TYPE,
             service_name,
@@ -139,32 +171,48 @@ class DiscoveryService:
             port=api_port,
             properties=props,
         )
-        self._zc.register_service(info)
-        self._listener = _DaiosServiceListener(self._on_discovered)
-        self._zc.add_service_listener(SERVICE_TYPE, self._listener)
-        logger.info("mDNS discovery started for cluster %s on %s", self.config.discovery.cluster_name, host)
+        await self._aiozc.async_register_service(info)
+        listener = _AsyncDaiosListener(
+            self._aiozc, self._on_discovered, self.config.node_id
+        )
+        self._browser = AsyncServiceBrowser(
+            self._aiozc.zeroconf, SERVICE_TYPE, listener=listener
+        )
+        logger.info(
+            "mDNS discovery started for cluster %s on %s (api %s, rpc %s)",
+            self.config.discovery.cluster_name,
+            host,
+            api_port,
+            rpc_port,
+        )
 
-    def stop(self) -> None:
-        if not self._running or self._zc is None:
+    async def stop(self) -> None:
+        if not self._running:
             return
         try:
-            if self._listener:
-                self._zc.remove_service_listener(self._listener)
-            self._zc.unregister_all_services()
-            self._zc.close()
+            if self._browser:
+                await self._browser.async_cancel()
+                self._browser = None
+            if self._aiozc:
+                await self._aiozc.async_unregister_all_services()
+                await self._aiozc.async_close()
+                self._aiozc = None
         except Exception:
             logger.exception("Error stopping mDNS discovery")
-        self._zc = None
-        self._listener = None
         self._running = False
 
     async def run_loop(self) -> None:
         """Background task that keeps discovery alive."""
         if not self.config.discovery_enabled:
             return
-        self.start()
+        try:
+            await self.start()
+        except Exception:
+            logger.exception("Failed to start mDNS discovery")
+            self._running = False
+            return
         try:
             while self._running:
                 await asyncio.sleep(self.config.discovery.advertise_interval)
         finally:
-            self.stop()
+            await self.stop()

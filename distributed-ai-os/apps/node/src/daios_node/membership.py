@@ -14,10 +14,22 @@ from daios_protocol.health import MemberInfo, MemberStatus, MembershipView
 from daios_protocol.messages import HeartbeatMessage, HeartbeatResponse, LeaveMessage
 
 from daios_node.coordinator import CoordinatorRegistry
-from daios_node.discovery import DiscoveryService
+from daios_node.discovery import DiscoveryService, _get_lan_ip
 from daios_node.resources import gather_advertisement, gather_resources
 
 logger = logging.getLogger(__name__)
+
+
+def _advertise_host(config: NodeConfig) -> str:
+    """Host this node should advertise to peers.
+
+    When bound to ``0.0.0.0`` (all interfaces, the Gen 2 default for discovery)
+    or loopback, advertise the LAN IP so peers can actually reach us.
+    """
+    bind = config.network.bind_host
+    if not bind or bind in ("0.0.0.0", "::", "127.0.0.1", "localhost"):
+        return _get_lan_ip()
+    return bind
 
 
 class MembershipService:
@@ -46,7 +58,7 @@ class MembershipService:
         )
         return MemberInfo(
             node_id=self.config.node_id,
-            host=self.config.network.bind_host,
+            host=_advertise_host(self.config),
             api_port=self.config.network.api_port,
             rpc_port=self.config.network.rpc_port,
             role=self.config.role.value,
@@ -61,6 +73,11 @@ class MembershipService:
         if member.node_id == self.config.node_id:
             return
         existing = self._members.get(member.node_id)
+        # Preserve a routable host: if the incoming member advertises a
+        # non-routable placeholder (0.0.0.0 / loopback) but we already know a
+        # real address (e.g. from mDNS), keep the real one.
+        if existing and member.host in ("0.0.0.0", "::", "127.0.0.1", "localhost", ""):
+            member = member.model_copy(update={"host": existing.host})
         if existing is None or member.membership_version >= existing.membership_version:
             self._members[member.node_id] = member
 

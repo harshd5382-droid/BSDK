@@ -97,7 +97,7 @@ class NodeApp:
                 await task
             except asyncio.CancelledError:
                 pass
-        self.discovery.stop()
+        await self.discovery.stop()
         if self._http_client:
             await self._http_client.aclose()
         self.inference.stop()

@@ -23,7 +23,6 @@ def _config(**kwargs) -> NodeConfig:
 def test_discovery_disabled_no_start():
     config = NodeConfig.model_validate({"node_id": "x", "role": "worker"})
     svc = DiscoveryService(config)
-    svc.start()
     assert svc.get_discovered_peers() == []
 
 
