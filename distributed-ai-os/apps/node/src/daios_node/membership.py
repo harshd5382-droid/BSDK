@@ -5,12 +5,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
 
 import httpx
 
 from daios_protocol.config import NodeConfig
-from daios_protocol.health import MemberInfo, MemberStatus, MembershipView
+from daios_protocol.health import MemberInfo, MemberStatus, MembershipView, ModelUsage
 from daios_protocol.messages import HeartbeatMessage, HeartbeatResponse, LeaveMessage
 
 from daios_node.coordinator import CoordinatorRegistry
@@ -40,10 +42,12 @@ class MembershipService:
         config: NodeConfig,
         discovery: DiscoveryService,
         coordinator_registry: CoordinatorRegistry,
+        model_usage_fn: Callable[[], ModelUsage] | None = None,
     ) -> None:
         self.config = config
         self.discovery = discovery
         self.coordinator_registry = coordinator_registry
+        self._model_usage_fn = model_usage_fn
         self._members: dict[str, MemberInfo] = {}
         self._membership_version = 0
         self._running = False
@@ -66,6 +70,7 @@ class MembershipService:
             last_seen=datetime.now(timezone.utc),
             resources=gather_resources(),
             advertisement=ad,
+            model_usage=self._model_usage_fn() if self._model_usage_fn else None,
             membership_version=self._membership_version,
         )
 

@@ -44,7 +44,12 @@ class NodeApp:
         self.inference_tracker = InferenceTracker()
         self.discovery = DiscoveryService(config)
         self.coordinator_registry = CoordinatorRegistry(config)
-        self.membership = MembershipService(config, self.discovery, self.coordinator_registry)
+        self.membership = MembershipService(
+            config,
+            self.discovery,
+            self.coordinator_registry,
+            model_usage_fn=self._local_model_usage,
+        )
         self._http_client: httpx.AsyncClient | None = None
         self._last_coordinator_ping: float = 0.0
         self._coordinator_ip: str | None = None
@@ -203,7 +208,7 @@ class NodeApp:
                         ),
                         "error": None if m.status.value != "dead" else "unreachable",
                         "resources": m.resources.model_dump() if m.resources else None,
-                        "model_usage": None,
+                        "model_usage": m.model_usage.model_dump() if m.model_usage else None,
                     }
                     for m in view.members
                     if m.node_id != self.config.node_id

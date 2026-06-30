@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import shutil
+import threading
+import time as _time
 from datetime import datetime, timezone
 
 import psutil
@@ -13,12 +15,35 @@ from daios_protocol.health import GpuInfo, ResourceAdvertisement, ResourceUsage
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# CPU % cache — psutil.cpu_percent(interval=None) compares against the last
+# call in this process.  When multiple concurrent callers (dashboard poll,
+# membership heartbeat, /health ping from the coordinator) all fire within
+# milliseconds of each other the measurement window becomes < 100 ms, which
+# produces wildly noisy readings.  We cache the value for 1 s so every
+# caller within that window shares one well-sampled measurement.
+# ---------------------------------------------------------------------------
+_cpu_lock: threading.Lock = threading.Lock()
+_cpu_value: float = 0.0
+_cpu_ts: float = 0.0
+_CPU_TTL: float = 1.0
+
+
+def _get_cpu_percent() -> float:
+    global _cpu_value, _cpu_ts
+    now = _time.monotonic()
+    with _cpu_lock:
+        if now - _cpu_ts >= _CPU_TTL:
+            _cpu_value = psutil.cpu_percent(interval=None)
+            _cpu_ts = now
+        return _cpu_value
+
 
 def gather_resources() -> ResourceUsage:
     """Snapshot live CPU / RAM usage for this machine."""
     mem = psutil.virtual_memory()
     return ResourceUsage(
-        cpu_percent=round(psutil.cpu_percent(interval=None), 1),
+        cpu_percent=round(_get_cpu_percent(), 1),
         cpu_count=psutil.cpu_count(logical=True),
         ram_used_gb=round((mem.total - mem.available) / (1024**3), 2),
         ram_total_gb=round(mem.total / (1024**3), 2),

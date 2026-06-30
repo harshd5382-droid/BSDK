@@ -116,7 +116,6 @@ function NodeResourceRow({
 }
 
 function ModelUsageBar({ usage }: { usage: ModelUsage | null }) {
-  const pct = Math.max(0, Math.min(100, usage?.usage_percent ?? 0));
   const active = usage?.status === "active";
   const idle = usage?.status === "idle";
   const detail =
@@ -124,24 +123,35 @@ function ModelUsageBar({ usage }: { usage: ModelUsage | null }) {
     (usage?.status === "offline" ? "Offline" : "—");
   const modelHint = usage?.model_name ? ` · ${usage.model_name}` : "";
 
+  // usage_percent is binary (0 or 100) — animating the width causes a visible
+  // back-and-forth wipe on every state change.  Instead we snap the width
+  // instantly and animate only the opacity so the state change feels
+  // intentional rather than glitchy.
+  const fillClass = active ? "m-stripe" : idle ? "bg-body" : "bg-hairline";
+
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
         <span className="label-caps text-[11px] text-muted">AI Model</span>
-        <span
+        <motion.span
+          key={usage?.status ?? "none"}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.25 }}
           className={`text-xs font-display font-light ${
             active ? "text-on-dark" : idle ? "text-body" : "text-muted"
           }`}
         >
           {detail}
           {modelHint}
-        </span>
+        </motion.span>
       </div>
       <div className="h-1.5 bg-surface-elevated overflow-hidden">
         <motion.div
-          className={`h-full ${active ? "m-stripe" : idle ? "bg-body" : "bg-hairline"}`}
-          animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.5, ease: "easeOut" }}
+          className={`h-full ${fillClass}`}
+          animate={{ opacity: active || idle ? 1 : 0.35 }}
+          style={{ width: active ? "100%" : idle ? "30%" : "0%" }}
+          transition={{ duration: 0.2 }}
         />
       </div>
     </div>
@@ -171,7 +181,7 @@ function UsageBar({
         <motion.div
           className={`h-full ${hot ? "bg-warning" : "bg-on-dark"}`}
           animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.5, ease: "easeOut" }}
+          transition={{ type: "spring", stiffness: 60, damping: 20, mass: 1 }}
         />
       </div>
     </div>
