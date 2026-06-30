@@ -14,6 +14,15 @@ interface Props {
   localLanIp: string;
 }
 
+function resolveApiPort(host: string, cluster: ClusterStatus | null): number {
+  for (const member of cluster?.membership?.members ?? []) {
+    if (member.host === host) {
+      return member.api_port;
+    }
+  }
+  return 8001;
+}
+
 export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props) {
   const [workers, setWorkers] = useState<WorkerRemoteStatus[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -21,11 +30,11 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
 
   const discoverWorkers = useCallback(async () => {
     if (!clusterToken) return;
-    const hosts = new Set<string>();
+    const hosts = new Map<string, number>();
 
     for (const peer of cluster?.peers ?? []) {
       if (peer.host && peer.host !== localLanIp && peer.host !== "127.0.0.1") {
-        hosts.add(peer.host);
+        hosts.set(peer.host, resolveApiPort(peer.host, cluster));
       }
     }
     for (const member of cluster?.membership?.members ?? []) {
@@ -35,21 +44,23 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
         member.host !== localLanIp &&
         member.host !== "127.0.0.1"
       ) {
-        hosts.add(member.host);
+        hosts.set(member.host, member.api_port);
       }
     }
 
     const results: WorkerRemoteStatus[] = [];
     await Promise.all(
-      [...hosts].map(async (host) => {
+      [...hosts.entries()].map(async ([host, apiPort]) => {
         try {
-          const status = await getWorkerStatus(host, clusterToken);
+          const status = await getWorkerStatus(host, apiPort);
           results.push({
             host,
             launcher: status.launcher,
             node_state: status.node_state,
             role: status.role,
             error: null,
+            remote_control: status.remote_control,
+            api_port: apiPort,
           });
         } catch (e) {
           results.push({
@@ -58,6 +69,7 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
             node_state: null,
             role: null,
             error: e instanceof Error ? e.message : "Unreachable",
+            api_port: apiPort,
           });
         }
       }),
@@ -80,9 +92,9 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
     setError(null);
     try {
       if (action === "stop") {
-        await stopWorker(host, clusterToken);
+        await stopWorker(host);
       } else if (action === "start") {
-        await startWorker(host, clusterToken, {
+        await startWorker(host, {
           role: "worker",
           backend: "llama.cpp",
           api_port: 8001,
@@ -90,7 +102,7 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
           discovery_enabled: true,
         });
       } else {
-        await updateWorker(host, clusterToken);
+        await updateWorker(host);
       }
       await discoverWorkers();
     } catch (e) {
@@ -128,50 +140,77 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
           </div>
         )}
         <ul className="space-y-3">
-          {workers.map((w) => (
-            <li
-              key={w.host}
-              className="flex flex-wrap items-center justify-between gap-3 border border-hairline px-3 py-3"
-            >
-              <div>
-                <div className="font-display text-on-dark">{w.host}</div>
-                <div className="text-xs text-muted">
-                  {w.error
-                    ? w.error
-                    : `${w.node_state ?? "unknown"} · ${w.role ?? "worker"}`}
+          {workers.map((w) => {
+            const remoteOk = w.remote_control === "launcher";
+            const statusLine = w.error
+              ? w.error
+              : w.remote_control === "node_only"
+                ? `${w.node_state ?? "unknown"} · ${w.role ?? "worker"} · node only (launcher offline)`
+                : `${w.node_state ?? "unknown"} · ${w.role ?? "worker"}`;
+
+            return (
+              <li
+                key={w.host}
+                className="flex flex-wrap items-center justify-between gap-3 border border-hairline px-3 py-3"
+              >
+                <div>
+                  <div className="font-display text-on-dark">{w.host}</div>
+                  <div className="text-xs text-muted">{statusLine}</div>
+                  {!remoteOk && !w.error && (
+                    <div className="text-xs text-muted mt-1 max-w-md">
+                      Remote Start/Stop needs the worker dashboard running (
+                      <span className="text-on-dark">make dashboard</span> → Help
+                      another PC → Start Worker).
+                    </div>
+                  )}
                 </div>
-              </div>
-              <div className="flex gap-2">
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  type="button"
-                  disabled={busy === w.host}
-                  onClick={() => runAction(w.host, "start")}
-                  className="cursor-pointer label-caps text-[10px] border border-hairline px-2 py-1 min-h-[32px]"
-                >
-                  Start
-                </motion.button>
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  type="button"
-                  disabled={busy === w.host}
-                  onClick={() => runAction(w.host, "stop")}
-                  className="cursor-pointer label-caps text-[10px] border border-hairline px-2 py-1 min-h-[32px]"
-                >
-                  Stop
-                </motion.button>
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  type="button"
-                  disabled={busy === w.host}
-                  onClick={() => runAction(w.host, "update")}
-                  className="cursor-pointer label-caps text-[10px] border border-hairline px-2 py-1 min-h-[32px]"
-                >
-                  Update
-                </motion.button>
-              </div>
-            </li>
-          ))}
+                <div className="flex gap-2">
+                  <motion.button
+                    whileTap={{ scale: 0.97 }}
+                    type="button"
+                    disabled={busy === w.host || !remoteOk}
+                    title={
+                      remoteOk
+                        ? "Start worker node"
+                        : "Worker launcher offline — start dashboard on worker PC"
+                    }
+                    onClick={() => runAction(w.host, "start")}
+                    className="cursor-pointer label-caps text-[10px] border border-hairline px-2 py-1 min-h-[32px] disabled:opacity-40"
+                  >
+                    Start
+                  </motion.button>
+                  <motion.button
+                    whileTap={{ scale: 0.97 }}
+                    type="button"
+                    disabled={busy === w.host || !remoteOk}
+                    title={
+                      remoteOk
+                        ? "Stop worker node"
+                        : "Worker launcher offline — start dashboard on worker PC"
+                    }
+                    onClick={() => runAction(w.host, "stop")}
+                    className="cursor-pointer label-caps text-[10px] border border-hairline px-2 py-1 min-h-[32px] disabled:opacity-40"
+                  >
+                    Stop
+                  </motion.button>
+                  <motion.button
+                    whileTap={{ scale: 0.97 }}
+                    type="button"
+                    disabled={busy === w.host || !remoteOk}
+                    title={
+                      remoteOk
+                        ? "Update worker software"
+                        : "Worker launcher offline — start dashboard on worker PC"
+                    }
+                    onClick={() => runAction(w.host, "update")}
+                    className="cursor-pointer label-caps text-[10px] border border-hairline px-2 py-1 min-h-[32px] disabled:opacity-40"
+                  >
+                    Update
+                  </motion.button>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </div>

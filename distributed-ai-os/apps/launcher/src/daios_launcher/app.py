@@ -32,6 +32,12 @@ from daios_launcher.settings import LauncherSettings
 from daios_launcher.system_info import gather_system_info
 from daios_launcher.update import get_version, pull_latest, reinstall_deps, reexec_launcher
 from daios_launcher.validation import validate_start_request, wait_for_peer
+from daios_launcher.worker_proxy import (
+    get_worker_status as proxy_worker_status,
+    start_worker as proxy_start_worker,
+    stop_worker as proxy_stop_worker,
+    update_worker as proxy_update_worker,
+)
 from daios_protocol.config import NodeRole, PeerConfig
 
 logger = logging.getLogger(__name__)
@@ -384,6 +390,36 @@ class LauncherApp:
                 self.settings.active_model = None
                 self.settings.save()
             return {"deleted": name}
+
+        if self.role == "coordinator":
+
+            @app.get("/api/launcher/workers/{host}/status")
+            async def worker_status(host: str, api_port: int = 8001):
+                if not self._http:
+                    raise HTTPException(status_code=503, detail="Launcher not ready")
+                return await proxy_worker_status(
+                    self._http, host, self.cluster_token, api_port
+                )
+
+            @app.post("/api/launcher/workers/{host}/start")
+            async def worker_start(host: str, req: StartRequest):
+                if not self._http:
+                    raise HTTPException(status_code=503, detail="Launcher not ready")
+                return await proxy_start_worker(
+                    self._http, host, self.cluster_token, req
+                )
+
+            @app.post("/api/launcher/workers/{host}/stop")
+            async def worker_stop(host: str):
+                if not self._http:
+                    raise HTTPException(status_code=503, detail="Launcher not ready")
+                return await proxy_stop_worker(self._http, host, self.cluster_token)
+
+            @app.post("/api/launcher/workers/{host}/update")
+            async def worker_update(host: str):
+                if not self._http:
+                    raise HTTPException(status_code=503, detail="Launcher not ready")
+                return await proxy_update_worker(self._http, host, self.cluster_token)
 
         @app.get("/api/launcher/cluster")
         async def cluster():

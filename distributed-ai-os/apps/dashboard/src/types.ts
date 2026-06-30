@@ -41,6 +41,8 @@ export interface WorkerRemoteStatus {
   node_state: string | null;
   role: string | null;
   error: string | null;
+  remote_control?: "launcher" | "node_only";
+  api_port?: number;
 }
 
 export interface LauncherStatus {
@@ -52,6 +54,8 @@ export interface LauncherStatus {
   uptime_seconds: number;
   last_error: string | null;
   launcher_role?: string | null;
+  /** Present when fetched via coordinator worker proxy. */
+  remote_control?: "launcher" | "node_only";
 }
 
 export interface ResourceUsage {

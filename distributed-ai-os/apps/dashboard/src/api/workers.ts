@@ -1,23 +1,18 @@
 import type { LauncherStatus, StartRequest } from "../types";
 
-const WORKER_LAUNCHER_PORT = 8090;
-
-function workerBase(host: string): string {
-  const normalized = host.split(":")[0];
-  return `http://${normalized}:${WORKER_LAUNCHER_PORT}/api/launcher`;
+function workerHostPath(host: string): string {
+  return encodeURIComponent(host.split(":")[0]);
 }
 
 async function workerFetch<T>(
   host: string,
-  token: string,
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const res = await fetch(`${workerBase(host)}${path}`, {
+  const res = await fetch(`/api/launcher/workers/${workerHostPath(host)}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      "X-DAIOS-Token": token,
       ...(init?.headers ?? {}),
     },
   });
@@ -32,36 +27,31 @@ async function workerFetch<T>(
 
 export async function getWorkerStatus(
   host: string,
-  token: string,
+  apiPort = 8001,
 ): Promise<LauncherStatus> {
-  return workerFetch(host, token, "/status");
+  return workerFetch(host, `/status?api_port=${apiPort}`);
 }
 
-export async function stopWorker(host: string, token: string): Promise<unknown> {
-  return workerFetch(host, token, "/stop", { method: "POST" });
+export async function stopWorker(host: string): Promise<unknown> {
+  return workerFetch(host, "/stop", { method: "POST" });
 }
 
 export async function startWorker(
   host: string,
-  token: string,
   req: StartRequest,
 ): Promise<unknown> {
-  return workerFetch(host, token, "/start", {
+  return workerFetch(host, "/start", {
     method: "POST",
     body: JSON.stringify(req),
   });
 }
 
-export async function updateWorker(host: string, token: string): Promise<unknown> {
-  return workerFetch(host, token, "/update", {
-    method: "POST",
-    body: JSON.stringify({ reexec: true }),
-  });
+export async function updateWorker(host: string): Promise<unknown> {
+  return workerFetch(host, "/update", { method: "POST" });
 }
 
 export async function getWorkerVersion(
   host: string,
-  token: string,
 ): Promise<{ commit: string | null; branch: string | null }> {
-  return workerFetch(host, token, "/version");
+  return workerFetch(host, "/version");
 }
