@@ -36,24 +36,28 @@ export default function ConnectCoordinator({
     (peerHost.trim() && !peerIsSelf && (modelPath || system.models.length === 0));
 
   return (
-    <div className="max-w-lg mx-auto">
-      <h2 className="font-display text-2xl font-semibold text-center mb-2">
-        Connect to another PC
-      </h2>
-      <p className="text-fabric-600 text-center mb-8 text-sm">
+    <div className="max-w-xl mx-auto">
+      <div className="flex items-center gap-3 mb-6">
+        <span className="h-4 w-1.5 m-stripe" aria-hidden="true" />
+        <span className="label-caps text-muted">Coordinator · Setup</span>
+      </div>
+
+      <h2 className="display text-4xl md:text-5xl mb-4">Connect To Another PC</h2>
+      <p className="text-body text-base font-light mb-10">
         Enter the LAN IP of the PC running as Worker.
       </p>
 
-      <div className="space-y-5 mb-8">
-        <label className="flex items-center gap-3 cursor-pointer">
+      <div className="space-y-6 mb-10">
+        <label className="flex items-center gap-3 cursor-pointer bg-surface-soft border border-hairline px-4 py-3">
           <input
             type="checkbox"
             checked={autoDiscovery}
             onChange={(e) => setAutoDiscovery(e.target.checked)}
-            className="w-4 h-4 accent-accent"
+            className="w-4 h-4 accent-[#1c69d4]"
           />
-          <span className="text-sm text-fabric-600">
-            <strong className="text-white">Auto Discovery</strong> — find workers on LAN via mDNS
+          <span className="text-sm font-light text-body">
+            <span className="text-on-dark">Auto Discovery</span> — find workers
+            on LAN via mDNS
           </span>
         </label>
 
@@ -64,7 +68,7 @@ export default function ConnectCoordinator({
             placeholder="e.g. 192.168.1.42"
             value={peerHost}
             onChange={(e) => setPeerHost(e.target.value)}
-            className="w-full bg-fabric-800 border border-fabric-700 rounded-lg px-4 py-3 font-display text-sm text-white placeholder:text-fabric-600 focus:outline-none focus:border-accent"
+            className="w-full bg-surface-card border border-hairline px-4 h-12 font-display text-sm text-on-dark placeholder:text-muted focus:outline-none focus:border-on-dark transition-colors"
           />
         </Field>
         )}
@@ -74,7 +78,7 @@ export default function ConnectCoordinator({
             <select
               value={modelPath}
               onChange={(e) => setModelPath(e.target.value)}
-              className="w-full bg-fabric-800 border border-fabric-700 rounded-lg px-4 py-3 font-display text-sm text-white focus:outline-none focus:border-accent cursor-pointer"
+              className="w-full bg-surface-card border border-hairline px-4 h-12 font-display text-sm text-on-dark focus:outline-none focus:border-on-dark cursor-pointer transition-colors"
             >
               {system.models.map((m) => (
                 <option key={m} value={`models/${m}`}>
@@ -84,25 +88,26 @@ export default function ConnectCoordinator({
             </select>
           </Field>
         ) : (
-          <div className="bg-warm/10 border border-warm/30 rounded-lg px-4 py-3 text-sm text-warm">
-            No GGUF models found in <code className="font-display">models/</code>.
-            Mock mode will be used for testing.
+          <div className="bg-surface-soft border-l-2 border-warning px-4 py-3 text-sm font-light text-body">
+            No GGUF models found in{" "}
+            <code className="font-display text-on-dark">models/</code>. Mock mode
+            will be used for testing.
           </div>
         )}
 
-        <div className="bg-fabric-800/50 border border-fabric-700 rounded-lg px-4 py-3 text-sm text-fabric-600">
-          This PC is the <span className="text-white">Coordinator</span> — its
+        <div className="bg-surface-soft border border-hairline px-4 py-3 text-sm font-light text-body">
+          This PC is the <span className="text-on-dark">Coordinator</span> — its
           address is{" "}
-          <span className="font-display text-accent">{system.lan_ip}</span>.
-          Enter the <strong className="text-white">other</strong> PC's worker IP
-          below.
+          <span className="font-display text-on-dark">{system.lan_ip}</span>.
+          Enter the <span className="text-on-dark">other</span> PC's worker IP
+          above.
         </div>
 
         {peerIsSelf && (
-          <div className="px-4 py-3 bg-warm/10 border border-warm/30 rounded-lg text-warm text-sm">
+          <div className="bg-surface-soft border-l-2 border-warning px-4 py-3 text-sm font-light text-body">
             That IP is this computer. Run as{" "}
-            <strong>Worker</strong> here instead, and Coordinator on the other
-            PC.
+            <span className="text-on-dark">Worker</span> here instead, and
+            Coordinator on the other PC.
           </div>
         )}
       </div>
@@ -111,35 +116,29 @@ export default function ConnectCoordinator({
         <motion.div
           initial={{ opacity: 0, x: -8 }}
           animate={{ opacity: 1, x: 0 }}
-          className="mb-4 px-4 py-3 bg-danger/10 border border-danger/30 rounded-lg text-danger text-sm"
+          className="mb-6 bg-surface-soft border-l-2 border-m-red px-4 py-3 text-sm font-light text-body-strong"
         >
           {error}
         </motion.div>
       )}
 
       <motion.button
-        whileTap={{ scale: 0.97 }}
+        whileTap={{ scale: 0.98 }}
         disabled={!canStart || loading}
         onClick={() =>
-          onStart(
-            peerHost.trim(),
-            modelPath ? modelPath : "",
-            autoDiscovery,
-          )
+          onStart(peerHost.trim(), modelPath ? modelPath : "", autoDiscovery)
         }
-        className="cursor-pointer w-full py-4 bg-accent text-fabric-950 font-semibold rounded-lg text-lg hover:bg-accent-dim disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
+        className="btn-m w-full"
       >
-        {loading ? "Starting…" : "Connect and Start"}
+        {loading ? "Starting…" : "Connect And Start"}
       </motion.button>
 
-      <div className="text-center mt-4">
-        <button
-          onClick={onBack}
-          className="cursor-pointer text-fabric-600 hover:text-white text-sm transition-colors"
-        >
-          ← Back
-        </button>
-      </div>
+      <button
+        onClick={onBack}
+        className="mt-6 cursor-pointer label-caps text-[12px] text-muted hover:text-on-dark transition-colors"
+      >
+        &larr; Back
+      </button>
     </div>
   );
 }
@@ -153,7 +152,7 @@ function Field({
 }) {
   return (
     <div>
-      <label className="block text-xs uppercase tracking-wider text-fabric-600 mb-2">
+      <label className="block label-caps text-[12px] text-muted mb-3">
         {label}
       </label>
       {children}

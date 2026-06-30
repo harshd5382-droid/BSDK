@@ -10,17 +10,22 @@ export default function StatusPill({ label, ok, detail }: Props) {
   return (
     <motion.div
       layout
-      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${
+      className={`inline-flex items-center gap-2 px-3 py-2 text-xs border ${
         ok
-          ? "bg-success/10 border-success/30 text-success"
-          : "bg-fabric-800 border-fabric-700 text-fabric-600"
+          ? "border-on-dark text-on-dark"
+          : "border-hairline text-muted"
       }`}
     >
       <span
-        className={`w-2 h-2 rounded-full ${ok ? "bg-success" : "bg-fabric-600"}`}
+        className={`h-2 w-2 ${ok ? "bg-success" : "bg-hairline"}`}
+        aria-hidden="true"
       />
-      {label}
-      {detail && <span className="text-fabric-600">· {detail}</span>}
+      <span className="label-caps text-[11px] tracking-[1px]">{label}</span>
+      {detail && (
+        <span className="font-display font-light text-body normal-case tracking-normal">
+          {detail}
+        </span>
+      )}
     </motion.div>
   );
 }

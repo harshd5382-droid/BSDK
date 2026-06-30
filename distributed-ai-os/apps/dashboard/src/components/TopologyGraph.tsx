@@ -19,7 +19,7 @@ export default function TopologyGraph({ status, cluster }: Props) {
   if (gen2 && remoteMembers.length > 0) {
     return (
       <div className="py-6">
-        <div className="text-xs uppercase tracking-wider text-fabric-600 text-center mb-4">
+        <div className="label-caps text-[12px] text-muted text-center mb-6">
           Cluster members ({remoteMembers.length + 1} nodes)
         </div>
         <div className="flex flex-wrap items-center justify-center gap-3">
@@ -44,7 +44,7 @@ export default function TopologyGraph({ status, cluster }: Props) {
           ))}
         </div>
         {activeLeases.length > 0 && (
-          <div className="text-center mt-4 text-xs text-fabric-600">
+          <div className="text-center mt-6 label-caps text-[11px] text-muted">
             {activeLeases.length} active coordinator lease
             {activeLeases.length > 1 ? "s" : ""}
           </div>
@@ -96,24 +96,26 @@ function NodeBox({
   highlight?: boolean;
 }) {
   return (
-    <motion.div
-      animate={active ? { boxShadow: "0 0 20px rgba(61,214,195,0.15)" } : {}}
-      className={`w-36 text-center p-4 rounded-xl border ${
+    <div
+      className={`w-36 p-5 border ${
         active
           ? highlight
-            ? "border-accent/50 bg-fabric-800"
-            : "border-accent/30 bg-fabric-800"
-          : "border-fabric-700 bg-fabric-800/50"
+            ? "border-on-dark bg-surface-card"
+            : "border-body bg-surface-card"
+          : "border-hairline bg-surface-soft"
       }`}
     >
-      <div className="font-display text-2xl text-accent mb-2">
-        {active ? "●" : "○"}
+      <div
+        className={`mb-3 h-2.5 w-2.5 ${
+          active ? (highlight ? "m-stripe" : "bg-on-dark") : "bg-hairline"
+        }`}
+        aria-hidden="true"
+      />
+      <div className="font-display text-sm font-bold text-on-dark truncate">
+        {label}
       </div>
-      <div className="font-display text-sm font-medium truncate">{label}</div>
-      <div className="text-xs text-fabric-600 uppercase tracking-wider mt-1">
-        {sub}
-      </div>
-    </motion.div>
+      <div className="label-caps text-[11px] text-muted mt-1.5">{sub}</div>
+    </div>
   );
 }
 
@@ -128,16 +130,16 @@ function ConnectionLine({
 }) {
   return (
     <div className="flex flex-col items-center w-24 mx-2">
-      <div className="relative w-full h-0.5 bg-fabric-700 overflow-hidden rounded">
+      <div className="relative w-full h-1 bg-hairline overflow-hidden">
         {connected && (
           <motion.div
-            className="absolute inset-y-0 left-0 w-1/3 bg-accent rounded"
+            className="absolute inset-y-0 left-0 w-1/3 m-stripe"
             animate={{ x: ["-100%", "400%"] }}
             transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
           />
         )}
       </div>
-      <span className="text-xs text-fabric-600 mt-2 font-display">
+      <span className="label-caps text-[11px] text-muted mt-3">
         {connected
           ? latency != null
             ? `${latency.toFixed(0)} ms`

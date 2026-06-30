@@ -2,7 +2,6 @@ import { useState } from "react";
 import { motion } from "motion/react";
 import TopologyGraph from "./TopologyGraph";
 import StatusPill from "./StatusPill";
-import LogPanel from "./LogPanel";
 import ResourcePanel from "./ResourcePanel";
 import LiveTabBar from "./LiveTabBar";
 import ChatBot from "./ChatBot";
@@ -11,8 +10,6 @@ import type { ClusterStatus, LauncherStatus, LiveTab } from "../types";
 interface Props {
   status: LauncherStatus;
   cluster: ClusterStatus | null;
-  logLines: string[];
-  logBottomRef: React.RefObject<HTMLDivElement | null>;
   onStop: () => void;
   onRestart: () => void;
   stopping: boolean;
@@ -22,8 +19,6 @@ interface Props {
 export default function LiveStatus({
   status,
   cluster,
-  logLines,
-  logBottomRef,
   onStop,
   onRestart,
   stopping,
@@ -48,22 +43,30 @@ export default function LiveStatus({
 
   return (
     <div className="max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="font-display text-2xl font-semibold">Cluster Live</h2>
-        <div className="flex gap-2">
+      <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
+        <div>
+          <div className="flex items-center gap-3 mb-3">
+            <span className="h-4 w-1.5 m-stripe" aria-hidden="true" />
+            <span className="label-caps text-muted">
+              {isCoordinator ? "Coordinator" : "Worker"}
+            </span>
+          </div>
+          <h2 className="display text-4xl md:text-5xl">Cluster Live</h2>
+        </div>
+        <div className="flex gap-3">
           <motion.button
-            whileTap={{ scale: 0.95 }}
+            whileTap={{ scale: 0.98 }}
             onClick={onRestart}
             disabled={stopping || restarting}
-            className="cursor-pointer px-4 py-2 text-sm border border-fabric-700 rounded-lg hover:border-accent/50 disabled:opacity-40 transition-colors min-h-[44px]"
+            className="btn-m px-5"
           >
             {restarting ? "Restarting…" : "Restart"}
           </motion.button>
           <motion.button
-            whileTap={{ scale: 0.95 }}
+            whileTap={{ scale: 0.98 }}
             onClick={onStop}
             disabled={stopping}
-            className="cursor-pointer px-4 py-2 text-sm bg-danger/20 border border-danger/30 text-danger rounded-lg hover:bg-danger/30 disabled:opacity-40 transition-colors min-h-[44px]"
+            className="btn-m btn-m-danger px-5"
           >
             {stopping ? "Stopping…" : "Stop"}
           </motion.button>
@@ -112,21 +115,24 @@ export default function LiveStatus({
         </div>
 
         {peer && !peerOk && isCoordinator && (
-          <div className="mb-4 px-4 py-3 bg-warm/10 border border-warm/30 rounded-lg text-warm text-sm">
+          <div className="mb-4 bg-surface-soft border-l-2 border-warning px-4 py-3 text-body text-sm font-light">
             Worker at{" "}
-            <span className="font-display">
+            <span className="font-display text-on-dark">
               {peer.host}:{peer.rpc_port}
             </span>{" "}
             is not reachable
             {peer.error ? ` (${peer.error})` : ""}.
-            <ol className="mt-2 list-decimal list-inside space-y-1">
+            <ol className="mt-2 list-decimal list-inside space-y-1 marker:text-muted">
               <li>
                 On the worker PC: open this dashboard →{" "}
-                <strong>Help another PC</strong> → <strong>Start Worker</strong>
+                <span className="text-on-dark">Help another PC</span> →{" "}
+                <span className="text-on-dark">Start Worker</span>
               </li>
               <li>
                 Confirm it shows address{" "}
-                <span className="font-display">{peer.host}:50052</span>
+                <span className="font-display text-on-dark">
+                  {peer.host}:50052
+                </span>
               </li>
               <li>Then click Restart on this Coordinator PC</li>
             </ol>
@@ -134,7 +140,7 @@ export default function LiveStatus({
         )}
 
         {isWorker && (
-          <div className="mb-4 px-4 py-3 bg-accent/10 border border-accent/30 rounded-lg text-fabric-600 text-sm">
+          <div className="mb-4 bg-surface-soft border border-hairline px-4 py-3 text-body text-sm font-light">
             {inboundClients > 0 ? (
               <>
                 Coordinator
@@ -142,12 +148,12 @@ export default function LiveStatus({
                   <>
                     {" "}
                     at{" "}
-                    <span className="font-display text-white">
+                    <span className="font-display text-on-dark">
                       {coordinatorIp}
                     </span>
                   </>
                 ) : null}{" "}
-                is <strong className="text-white">connected</strong>
+                is <span className="text-on-dark">connected</span>
                 {inboundClients > 1
                   ? ` (${inboundClients} active RPC links)`
                   : ""}
@@ -156,7 +162,7 @@ export default function LiveStatus({
             ) : (
               <>
                 Worker is running and listening. On the{" "}
-                <strong className="text-white">other PC</strong>, choose
+                <span className="text-on-dark">other PC</span>, choose
                 Coordinator and enter this machine's IP as the worker address.
                 This panel shows "connected" once the coordinator starts.
               </>
@@ -165,14 +171,13 @@ export default function LiveStatus({
         )}
 
         {status.last_error && (
-          <div className="mb-4 px-4 py-3 bg-danger/10 border border-danger/30 rounded-lg text-danger text-sm">
+          <div className="mb-4 bg-surface-soft border-l-2 border-m-red px-4 py-3 text-body-strong text-sm font-light">
             {status.last_error}
           </div>
         )}
 
         <div className="space-y-4">
           <ResourcePanel status={status} cluster={cluster} />
-          <LogPanel lines={logLines} bottomRef={logBottomRef} />
         </div>
       </div>
 

@@ -10,17 +10,18 @@ const VISIBLE_LINES = 20;
 export default function LogPanel({ lines, bottomRef }: Props) {
   const visible = lines.slice(-VISIBLE_LINES);
   return (
-    <div className="bg-fabric-900 border border-fabric-700 rounded-lg overflow-hidden">
-      <div className="px-4 py-2 border-b border-fabric-700 text-xs uppercase tracking-wider text-fabric-600 font-display flex items-center justify-between">
-        <span>Recent Log</span>
-        <span className="text-fabric-700 normal-case tracking-normal">
+    <div className="bg-surface-soft border border-hairline overflow-hidden">
+      <div className="h-1 w-full m-stripe" aria-hidden="true" />
+      <div className="px-4 py-2.5 border-b border-hairline flex items-center justify-between">
+        <span className="label-caps text-[12px] text-on-dark">Recent Log</span>
+        <span className="font-display text-xs font-light text-muted">
           last {VISIBLE_LINES} lines
         </span>
       </div>
-      <div className="h-40 overflow-y-auto p-3 font-display text-xs leading-relaxed text-white/90">
+      <div className="h-40 overflow-y-auto p-3 font-display font-light text-xs leading-relaxed text-body-strong">
         <AnimatePresence initial={false}>
           {visible.length === 0 ? (
-            <div className="text-white/50">Waiting for output…</div>
+            <div className="text-muted">Waiting for output…</div>
           ) : (
             visible.map((line, i) => (
               <motion.div

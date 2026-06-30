@@ -19,47 +19,60 @@ export default function ConnectWorker({
 }: Props) {
   const [autoDiscovery, setAutoDiscovery] = useState(true);
   return (
-    <div className="max-w-lg mx-auto text-center">
-      <h2 className="font-display text-2xl font-semibold mb-2">
-        Share this PC's power
-      </h2>
-      <p className="text-fabric-600 mb-8 text-sm">
+    <div className="max-w-xl mx-auto">
+      <div className="flex items-center gap-3 mb-6">
+        <span className="h-4 w-1.5 m-stripe" aria-hidden="true" />
+        <span className="label-caps text-muted">Worker · Setup</span>
+      </div>
+
+      <h2 className="display text-4xl md:text-5xl mb-4">Share This PC's Power</h2>
+      <p className="text-body text-base font-light mb-10">
         Tell the other PC to connect to this address.
       </p>
 
       <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="bg-fabric-800 border border-accent/30 rounded-xl p-8 mb-8"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-surface-soft border border-hairline mb-8"
       >
-        <label className="flex items-center justify-center gap-3 cursor-pointer mb-4">
-          <input
-            type="checkbox"
-            checked={autoDiscovery}
-            onChange={(e) => setAutoDiscovery(e.target.checked)}
-            className="w-4 h-4 accent-accent"
-          />
-          <span className="text-sm text-fabric-600">
-            <strong className="text-white">Auto Discovery</strong> — join cluster via mDNS
-          </span>
-        </label>
-        <div className="text-xs uppercase tracking-wider text-fabric-600 mb-2">
-          {autoDiscovery ? "LAN address (auto-discovered)" : "Share this address"}
-        </div>
-        <div className="font-display text-3xl text-accent font-semibold select-all">
-          {system.lan_ip}:50052
-        </div>
-        <div className="text-fabric-600 text-sm mt-3">
-          Port 50052 must be open in your firewall
+        <div className="h-1 w-full m-stripe" aria-hidden="true" />
+        <div className="px-8 py-10">
+          <label className="flex items-center gap-3 cursor-pointer mb-6 bg-surface-card border border-hairline px-4 py-3">
+            <input
+              type="checkbox"
+              checked={autoDiscovery}
+              onChange={(e) => setAutoDiscovery(e.target.checked)}
+              className="w-4 h-4 accent-[#1c69d4]"
+            />
+            <span className="text-sm font-light text-body">
+              <span className="text-on-dark">Auto Discovery</span> — join cluster
+              via mDNS
+            </span>
+          </label>
+          <div className="label-caps text-[12px] text-muted mb-4">
+            {autoDiscovery
+              ? "LAN address (auto-discovered)"
+              : "Share this address"}
+          </div>
+          <div className="font-display text-3xl md:text-4xl font-bold text-on-dark select-all break-all">
+            {system.lan_ip}:50052
+          </div>
+          <div className="text-body text-sm font-light mt-4">
+            Port 50052 must be open in your firewall.
+          </div>
         </div>
       </motion.div>
 
-      <div className="bg-fabric-800/50 border border-fabric-700 rounded-lg px-4 py-3 text-sm text-fabric-600 mb-8 text-left">
-        <strong className="text-white">Steps on the other PC:</strong>
-        <ol className="mt-2 space-y-1 list-decimal list-inside">
+      <div className="bg-surface-soft border border-hairline px-5 py-4 text-sm font-light text-body mb-10">
+        <span className="text-on-dark">Steps on the other PC:</span>
+        <ol className="mt-3 space-y-2 list-decimal list-inside marker:text-muted">
           <li>Open this dashboard on the other computer</li>
           <li>Choose "Run the AI here (Coordinator)"</li>
-          <li>Enter <span className="font-display text-accent">{system.lan_ip}</span> as the worker IP</li>
+          <li>
+            Enter{" "}
+            <span className="font-display text-on-dark">{system.lan_ip}</span> as
+            the worker IP
+          </li>
         </ol>
       </div>
 
@@ -67,29 +80,27 @@ export default function ConnectWorker({
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="mb-4 px-4 py-3 bg-danger/10 border border-danger/30 rounded-lg text-danger text-sm"
+          className="mb-6 bg-surface-soft border-l-2 border-m-red px-4 py-3 text-sm font-light text-body-strong"
         >
           {error}
         </motion.div>
       )}
 
       <motion.button
-        whileTap={{ scale: 0.97 }}
+        whileTap={{ scale: 0.98 }}
         disabled={loading}
         onClick={() => onStart(autoDiscovery)}
-        className="cursor-pointer w-full py-4 bg-accent text-fabric-950 font-semibold rounded-lg text-lg hover:bg-accent-dim disabled:opacity-40 transition-colors duration-200"
+        className="btn-m w-full"
       >
         {loading ? "Starting…" : "Start Worker"}
       </motion.button>
 
-      <div className="mt-4">
-        <button
-          onClick={onBack}
-          className="cursor-pointer text-fabric-600 hover:text-white text-sm transition-colors"
-        >
-          ← Back
-        </button>
-      </div>
+      <button
+        onClick={onBack}
+        className="mt-6 cursor-pointer label-caps text-[12px] text-muted hover:text-on-dark transition-colors"
+      >
+        &larr; Back
+      </button>
     </div>
   );
 }

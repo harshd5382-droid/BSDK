@@ -17,15 +17,16 @@ const fadeUp = {
 
 export default function WelcomeScreen({ system, onNext }: Props) {
   return (
-    <div className="flex flex-col items-center text-center max-w-lg mx-auto">
+    <div className="max-w-5xl mx-auto">
       <motion.div
         custom={0}
         variants={fadeUp}
         initial="hidden"
         animate="visible"
-        className="font-display text-xs tracking-[0.3em] uppercase text-accent mb-4"
+        className="flex items-center gap-3 mb-6"
       >
-        Generation 1
+        <span className="h-4 w-1.5 m-stripe" aria-hidden="true" />
+        <span className="label-caps text-on-dark">Generation 1</span>
       </motion.div>
 
       <motion.h1
@@ -33,9 +34,11 @@ export default function WelcomeScreen({ system, onNext }: Props) {
         variants={fadeUp}
         initial="hidden"
         animate="visible"
-        className="font-display text-3xl md:text-4xl font-semibold mb-3"
+        className="display text-5xl md:text-7xl lg:text-8xl mb-6"
       >
-        Distributed AI OS
+        More Power.
+        <br />
+        Together.
       </motion.h1>
 
       <motion.p
@@ -43,9 +46,10 @@ export default function WelcomeScreen({ system, onNext }: Props) {
         variants={fadeUp}
         initial="hidden"
         animate="visible"
-        className="text-fabric-600 text-lg mb-10 leading-relaxed"
+        className="text-body-strong text-lg md:text-xl font-light max-w-xl leading-relaxed mb-12"
       >
-        Connect two PCs to run AI together. One click to start.
+        Connect two PCs to run AI together. One machine drives, the other
+        lends its power. One click to start.
       </motion.p>
 
       <motion.div
@@ -53,14 +57,14 @@ export default function WelcomeScreen({ system, onNext }: Props) {
         variants={fadeUp}
         initial="hidden"
         animate="visible"
-        className="w-full grid grid-cols-2 gap-3 mb-10 text-left"
+        className="grid grid-cols-2 md:grid-cols-4 gap-px bg-hairline border border-hairline mb-12"
       >
         <Spec label="Hostname" value={system.hostname} />
-        <Spec label="LAN IP" value={system.lan_ip} highlight />
+        <Spec label="LAN IP" value={system.lan_ip} />
         <Spec label="CPU" value={`${system.cpu_count} threads`} />
         <Spec
           label="RAM"
-          value={`${system.ram_available_gb} / ${system.ram_total_gb} GB free`}
+          value={`${system.ram_available_gb} / ${system.ram_total_gb} GB`}
         />
       </motion.div>
 
@@ -69,35 +73,26 @@ export default function WelcomeScreen({ system, onNext }: Props) {
         variants={fadeUp}
         initial="hidden"
         animate="visible"
-        whileTap={{ scale: 0.97 }}
+        whileTap={{ scale: 0.98 }}
         onClick={onNext}
-        className="cursor-pointer px-10 py-4 bg-accent text-fabric-950 font-semibold rounded-lg text-lg hover:bg-accent-dim transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-fabric-950"
+        className="btn-m"
       >
         Get Started
+        <span aria-hidden="true" className="ml-3">
+          &rarr;
+        </span>
       </motion.button>
     </div>
   );
 }
 
-function Spec({
-  label,
-  value,
-  highlight,
-}: {
-  label: string;
-  value: string;
-  highlight?: boolean;
-}) {
+function Spec({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-fabric-800/60 border border-fabric-700 rounded-lg px-4 py-3">
-      <div className="text-xs text-fabric-600 uppercase tracking-wider mb-1">
-        {label}
-      </div>
-      <div
-        className={`font-display text-sm ${highlight ? "text-accent" : "text-white"}`}
-      >
+    <div className="bg-surface-soft px-5 py-6">
+      <div className="font-display text-2xl font-bold leading-none truncate text-on-dark">
         {value}
       </div>
+      <div className="label-caps text-[12px] text-muted mt-3">{label}</div>
     </div>
   );
 }

@@ -34,14 +34,16 @@ export default function ResourcePanel({ status, cluster }: Props) {
   ];
 
   return (
-    <div className="bg-fabric-900 border border-fabric-700 rounded-lg overflow-hidden">
-      <div className="px-4 py-2 border-b border-fabric-700 text-xs uppercase tracking-wider text-fabric-600 font-display flex items-center justify-between">
-        <span>Resource Usage — All PCs</span>
-        <span className="text-fabric-700 normal-case tracking-normal">
+    <div className="bg-surface-soft border border-hairline overflow-hidden">
+      <div className="px-4 py-3 border-b border-hairline flex items-center justify-between">
+        <span className="label-caps text-[12px] text-on-dark">
+          Resource Usage — All PCs
+        </span>
+        <span className="font-display text-xs font-light text-muted">
           {nodes.length} {nodes.length === 1 ? "node" : "nodes"}
         </span>
       </div>
-      <div className="divide-y divide-fabric-800">
+      <div className="divide-y divide-hairline-strong">
         {nodes.map((node, i) => (
           <NodeResourceRow key={`${node.label}-${i}`} node={node} index={i} />
         ))}
@@ -67,28 +69,27 @@ function NodeResourceRow({
       className="p-4"
     >
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <span
-            className={`inline-block w-2 h-2 rounded-full ${
-              node.online ? "bg-accent" : "bg-fabric-700"
+            className={`inline-block w-2 h-2 ${
+              node.online ? "bg-on-dark" : "bg-hairline"
             }`}
+            aria-hidden="true"
           />
-          <span className="font-display text-sm font-medium truncate">
+          <span className="font-display text-sm font-bold text-on-dark truncate">
             {node.label}
           </span>
-          <span className="text-xs text-fabric-600 uppercase tracking-wider">
-            {node.sub}
-          </span>
+          <span className="label-caps text-[11px] text-muted">{node.sub}</span>
         </div>
         {r?.cpu_count != null && (
-          <span className="text-xs text-fabric-600 font-display">
+          <span className="text-xs text-muted font-display font-light">
             {r.cpu_count} cores
           </span>
         )}
       </div>
 
       {!node.online || !r ? (
-        <div className="text-xs text-fabric-700">
+        <div className="text-xs text-muted font-light">
           {node.online ? "No resource data" : "Offline"}
         </div>
       ) : (
@@ -125,22 +126,20 @@ function ModelUsageBar({ usage }: { usage: ModelUsage | null }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-xs text-fabric-600 font-display uppercase tracking-wider">
-          AI Model
-        </span>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="label-caps text-[11px] text-muted">AI Model</span>
         <span
-          className={`text-xs font-display ${
-            active ? "text-accent" : idle ? "text-white/80" : "text-white/50"
+          className={`text-xs font-display font-light ${
+            active ? "text-on-dark" : idle ? "text-body" : "text-muted"
           }`}
         >
           {detail}
           {modelHint}
         </span>
       </div>
-      <div className="h-2 bg-fabric-800 rounded overflow-hidden">
+      <div className="h-1.5 bg-surface-elevated overflow-hidden">
         <motion.div
-          className={`h-full rounded ${active ? "bg-accent" : idle ? "bg-accent/40" : "bg-fabric-700"}`}
+          className={`h-full ${active ? "m-stripe" : idle ? "bg-body" : "bg-hairline"}`}
           animate={{ width: `${pct}%` }}
           transition={{ duration: 0.5, ease: "easeOut" }}
         />
@@ -162,15 +161,15 @@ function UsageBar({
   const hot = pct >= 85;
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-xs text-fabric-600 font-display uppercase tracking-wider">
-          {label}
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="label-caps text-[11px] text-muted">{label}</span>
+        <span className="text-xs text-body font-display font-light">
+          {detail}
         </span>
-        <span className="text-xs text-white/80 font-display">{detail}</span>
       </div>
-      <div className="h-2 bg-fabric-800 rounded overflow-hidden">
+      <div className="h-1.5 bg-surface-elevated overflow-hidden">
         <motion.div
-          className={`h-full rounded ${hot ? "bg-warm" : "bg-accent"}`}
+          className={`h-full ${hot ? "bg-warning" : "bg-on-dark"}`}
           animate={{ width: `${pct}%` }}
           transition={{ duration: 0.5, ease: "easeOut" }}
         />

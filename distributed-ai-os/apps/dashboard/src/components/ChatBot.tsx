@@ -146,23 +146,22 @@ export default function ChatBot() {
   }
 
   return (
-    <div className="flex flex-col h-[min(72dvh,640px)] bg-fabric-800/50 border border-fabric-700 rounded-lg overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-fabric-700">
+    <div className="flex flex-col h-[min(72dvh,640px)] bg-surface-soft border border-hairline overflow-hidden">
+      <div className="h-1 w-full m-stripe" aria-hidden="true" />
+      <div className="flex items-center justify-between px-4 py-3 border-b border-hairline">
         <div>
-          <h3 className="font-display text-sm tracking-wider text-accent">
-            AI Chat
-          </h3>
-          <p className="text-xs text-fabric-600 mt-0.5">
+          <h3 className="label-caps text-[13px] text-on-dark">AI Chat</h3>
+          <p className="text-xs text-muted font-light mt-1">
             Full model context — prompt and reply share the model window
           </p>
         </div>
         {messages.length > 0 && (
           <motion.button
-            whileTap={{ scale: 0.95 }}
+            whileTap={{ scale: 0.97 }}
             type="button"
             onClick={handleClear}
             disabled={loading}
-            className="cursor-pointer px-3 py-1.5 text-xs border border-fabric-700 rounded-md text-fabric-600 hover:text-white/80 hover:border-fabric-600 disabled:opacity-40 transition-colors min-h-[44px]"
+            className="cursor-pointer px-4 min-h-[44px] label-caps text-[11px] border border-hairline text-muted hover:text-on-dark hover:border-on-dark disabled:opacity-40 transition-colors"
           >
             Clear
           </motion.button>
@@ -178,11 +177,11 @@ export default function ChatBot() {
       >
         {messages.length === 0 && !error && (
           <div className="h-full flex flex-col items-center justify-center text-center px-6">
-            <p className="text-sm text-fabric-600 max-w-sm leading-relaxed">
+            <p className="text-sm text-body font-light max-w-sm leading-relaxed">
               Ask anything. Responses stream from your distributed cluster with
               no artificial length limit.
             </p>
-            <p className="text-xs text-fabric-700 mt-3">
+            <p className="text-xs text-muted font-light mt-3">
               Enter to send · Shift+Enter for newline
             </p>
           </div>
@@ -198,14 +197,14 @@ export default function ChatBot() {
               className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[85%] rounded-lg px-3 py-2 text-sm leading-relaxed ${
+                className={`max-w-[85%] px-3 py-2 text-sm font-light leading-relaxed ${
                   msg.role === "user"
-                    ? "bg-accent/15 border border-accent/25 text-white/95"
-                    : "bg-fabric-900 border border-fabric-700 text-white/90"
+                    ? "bg-surface-card border-l-2 border-m-blue-dark text-on-dark"
+                    : "bg-surface-card border border-hairline text-body-strong"
                 }`}
               >
                 {msg.content || (
-                  <span className="text-fabric-600 animate-pulse">…</span>
+                  <span className="text-muted animate-pulse">…</span>
                 )}
               </div>
             </motion.div>
@@ -217,18 +216,18 @@ export default function ChatBot() {
             role="alert"
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
-            className="px-3 py-2 bg-danger/10 border border-danger/30 rounded-lg text-danger text-sm"
+            className="bg-surface-card border-l-2 border-m-red px-3 py-2 text-body-strong text-sm font-light"
           >
             {error}
           </motion.div>
         )}
       </div>
 
-      <div className="border-t border-fabric-700 p-4">
+      <div className="border-t border-hairline p-4">
         <label htmlFor="chat-input" className="sr-only">
           Message
         </label>
-        <div className="flex gap-2 items-end">
+        <div className="flex gap-3 items-end">
           <textarea
             id="chat-input"
             ref={textareaRef}
@@ -238,15 +237,15 @@ export default function ChatBot() {
             disabled={loading}
             rows={2}
             placeholder="Type a message…"
-            className="flex-1 resize-none bg-fabric-900 border border-fabric-700 rounded-lg px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:border-accent disabled:opacity-50 min-h-[44px]"
+            className="flex-1 resize-none bg-surface-card border border-hairline px-3 py-2.5 text-sm font-light leading-relaxed text-on-dark placeholder:text-muted focus:outline-none focus:border-on-dark disabled:opacity-50 min-h-[44px] transition-colors"
           />
           <motion.button
-            whileTap={{ scale: 0.95 }}
+            whileTap={{ scale: 0.97 }}
             type="button"
             onClick={handleSend}
             disabled={loading || !input.trim()}
             aria-label={loading ? "Sending message" : "Send message"}
-            className="cursor-pointer shrink-0 px-5 py-2.5 bg-accent text-fabric-950 font-medium rounded-lg text-sm hover:bg-accent-dim disabled:opacity-40 transition-colors min-h-[44px] min-w-[44px]"
+            className="btn-m shrink-0 px-6"
           >
             {loading ? "…" : "Send"}
           </motion.button>

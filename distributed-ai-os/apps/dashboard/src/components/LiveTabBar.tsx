@@ -17,7 +17,7 @@ export default function LiveTabBar({ tabs, active, onChange }: Props) {
     <div
       role="tablist"
       aria-label="Live dashboard sections"
-      className="flex gap-1 p-1 bg-fabric-900/80 border border-fabric-700 rounded-lg mb-6"
+      className="flex gap-8 border-b border-hairline mb-8"
     >
       {tabs.map((tab) => {
         const selected = tab.id === active;
@@ -28,22 +28,18 @@ export default function LiveTabBar({ tabs, active, onChange }: Props) {
             role="tab"
             aria-selected={selected}
             onClick={() => onChange(tab.id)}
-            className={`relative flex-1 cursor-pointer px-4 py-2.5 text-sm font-medium rounded-md transition-colors min-h-[44px] ${
-              selected
-                ? "text-fabric-950"
-                : "text-fabric-600 hover:text-white/80"
+            className={`relative cursor-pointer pb-3 min-h-[44px] label-caps text-[13px] transition-colors ${
+              selected ? "text-on-dark" : "text-muted hover:text-on-dark"
             }`}
           >
+            {tab.label}
             {selected && (
               <motion.span
                 layoutId="live-tab-indicator"
-                className="absolute inset-0 bg-accent rounded-md"
+                className="absolute left-0 right-0 -bottom-px h-0.5 bg-on-dark"
                 transition={{ type: "spring", stiffness: 400, damping: 30 }}
               />
             )}
-            <span className="relative z-10 font-display tracking-wide">
-              {tab.label}
-            </span>
           </button>
         );
       })}
