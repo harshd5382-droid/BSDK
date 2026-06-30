@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -22,6 +23,12 @@ from daios_node.model_usage import gather_model_usage
 from daios_node.peers import check_all_peers, count_inbound_rpc_clients
 
 logger = logging.getLogger(__name__)
+
+_COORDINATOR_PING_TTL = 30.0  # seconds — how long a health ping keeps "connected" alive
+
+
+def _is_loopback(ip: str) -> bool:
+    return ip.startswith("127.") or ip in ("::1", "localhost", "0.0.0.0")
 
 
 def gather_resources() -> ResourceUsage:
@@ -47,6 +54,8 @@ class NodeApp:
         self.inference = InferenceManager(config)
         self.inference_tracker = InferenceTracker()
         self._http_client: httpx.AsyncClient | None = None
+        self._last_coordinator_ping: float = 0.0
+        self._coordinator_ip: str | None = None
 
     def _local_model_usage(self) -> ModelUsage:
         inbound = (
@@ -87,7 +96,12 @@ class NodeApp:
         app.state.inference_tracker = self.inference_tracker
 
         @app.get("/health")
-        async def health() -> NodeHealth:
+        async def health(request: Request) -> NodeHealth:
+            if self.config.runs_rpc_server:
+                client_ip = request.client.host if request.client else None
+                if client_ip and not _is_loopback(client_ip):
+                    self._last_coordinator_ping = time.monotonic()
+                    self._coordinator_ip = client_ip
             return NodeHealth(
                 node_id=self.config.node_id,
                 role=self.config.role.value,
@@ -119,6 +133,15 @@ class NodeApp:
                 if self.config.runs_rpc_server
                 else 0
             )
+            # If no active RPC connection exists yet, fall back to the health-ping
+            # tracker: the coordinator probes our /health endpoint every few seconds
+            # while running, so a recent ping means a coordinator is attached.
+            coordinator_ip: str | None = None
+            if self.config.runs_rpc_server:
+                ping_age = time.monotonic() - self._last_coordinator_ping
+                if ping_age < _COORDINATOR_PING_TTL:
+                    coordinator_ip = self._coordinator_ip
+                    inbound = max(inbound, 1)
             return ClusterStatus(
                 coordinator_node_id=self.config.node_id
                 if self.config.runs_coordinator
@@ -128,6 +151,7 @@ class NodeApp:
                 inbound_rpc_clients=inbound,
                 local_resources=gather_resources(),
                 local_model_usage=self._local_model_usage(),
+                coordinator_ip=coordinator_ip,
             )
 
         if self.config.inference.backend == "mock":

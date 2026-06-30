@@ -33,6 +33,7 @@ export default function LiveStatus({
   const isCoordinator = status.role === "coordinator";
   const isWorker = status.role === "worker";
   const inboundClients = cluster?.inbound_rpc_clients ?? 0;
+  const coordinatorIp = cluster?.coordinator_ip ?? null;
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -66,7 +67,13 @@ export default function LiveStatus({
           <StatusPill
             label="Coordinator"
             ok={inboundClients > 0}
-            detail={inboundClients > 0 ? `${inboundClients} attached` : "listening"}
+            detail={
+              inboundClients > 0
+                ? coordinatorIp
+                  ? coordinatorIp
+                  : `${inboundClients} attached`
+                : "listening"
+            }
           />
         ) : (
           <StatusPill
@@ -108,17 +115,18 @@ export default function LiveStatus({
         <div className="mb-4 px-4 py-3 bg-accent/10 border border-accent/30 rounded-lg text-fabric-600 text-sm">
           {inboundClients > 0 ? (
             <>
-              Worker is running and a coordinator is{" "}
-              <strong className="text-white">connected</strong> (
-              {inboundClients} active RPC link
-              {inboundClients > 1 ? "s" : ""}).
+              Coordinator{coordinatorIp ? (
+                <> at <span className="font-display text-white">{coordinatorIp}</span></>
+              ) : null}{" "}
+              is <strong className="text-white">connected</strong>
+              {inboundClients > 1 ? ` (${inboundClients} active RPC links)` : ""}.
             </>
           ) : (
             <>
               Worker is running and listening. On the{" "}
               <strong className="text-white">other PC</strong>, choose Coordinator
               and enter this machine's IP as the worker address. This panel shows
-              "connected" once the coordinator starts inference.
+              "connected" once the coordinator starts.
             </>
           )}
         </div>

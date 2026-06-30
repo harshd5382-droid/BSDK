@@ -74,3 +74,4 @@ class ClusterStatus(BaseModel):
     generation: int = 1
     local_resources: ResourceUsage | None = None
     local_model_usage: ModelUsage | None = None
+    coordinator_ip: str | None = None

@@ -29,7 +29,11 @@ export default function TopologyGraph({ status, cluster }: Props) {
       />
 
       <NodeBox
-        label={isWorker ? "Remote PC" : peer?.host ?? "Other PC"}
+        label={
+          isWorker
+            ? (cluster?.coordinator_ip ?? "Remote PC")
+            : (peer?.host ?? "Other PC")
+        }
         sub={isWorker ? "Coordinator" : "Worker"}
         active={connected}
       />

@@ -52,6 +52,7 @@ export interface ClusterStatus {
   generation: number;
   local_resources: ResourceUsage | null;
   local_model_usage: ModelUsage | null;
+  coordinator_ip: string | null;
 }
 
 export type NodeRole = "coordinator" | "worker" | "hybrid";
