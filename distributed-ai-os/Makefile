@@ -1,4 +1,4 @@
-.PHONY: install test benchmark lint run-mock clean dashboard dashboard-dev dashboard-build
+.PHONY: install test benchmark benchmark-with-worker benchmark-without-worker benchmark-compare lint run-mock clean dashboard dashboard-dev dashboard-build
 
 VENV := .venv
 PY := $(VENV)/bin/python
@@ -12,6 +12,22 @@ test: install
 
 benchmark: install
 	$(PY) benchmarks/run_benchmark.py --url http://127.0.0.1:8000 -n 20
+
+# Step 1: run while the worker PC is connected (coordinator + remote RPC worker).
+benchmark-with-worker: install
+	$(PY) benchmarks/run_benchmark.py --url http://127.0.0.1:8000 -n 5 \
+		--label with-worker -o benchmarks/results/with-worker.json
+
+# Step 2: stop the node, restart the coordinator alone (no peer), then run this.
+benchmark-without-worker: install
+	$(PY) benchmarks/run_benchmark.py --url http://127.0.0.1:8000 -n 5 \
+		--label without-worker -o benchmarks/results/without-worker.json
+
+# Step 3: print the time difference between the two runs above.
+benchmark-compare:
+	$(PY) benchmarks/compare_worker.py \
+		benchmarks/results/with-worker.json \
+		benchmarks/results/without-worker.json
 
 lint: install
 	$(VENV)/bin/ruff check packages/ apps/ tests/ benchmarks/

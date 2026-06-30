@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 from daios_launcher.gguf_context import infer_context_size
@@ -17,6 +19,12 @@ from daios_protocol.config import (
     NodeRole,
     PeerConfig,
 )
+
+
+# Context window. 131072 = full native 128k context for Qwen-class models.
+# Note: a larger context grows the KV cache and can slow per-token speed on CPU/RPC.
+INFERENCE_CONTEXT_CAP = 131072
+DEFAULT_CHAT_MAX_TOKENS = 512
 
 
 class StartRequest(BaseModel):
@@ -51,11 +59,39 @@ def _venv_binary(project_root: Path, name: str) -> str:
     return resolve_venv_binary(project_root, name)
 
 
+def _has_nvidia_gpu() -> bool:
+    try:
+        result = subprocess.run(
+            ["nvidia-smi"],
+            capture_output=True,
+            timeout=2,
+            check=False,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _resolve_threads() -> int:
+    """Use most cores for inference, leaving one for the OS and API."""
+    cores = os.cpu_count() or 4
+    return max(2, cores - 1)
+
+
 def _resolve_context_size(model_path: str | None, backend: str) -> int:
-    """Use the model's native context window when available (0 = llama.cpp default)."""
+    """Cap context for fast CPU/RPC inference (native 128k is far too large)."""
     if backend != "llama.cpp" or not model_path:
         return 0
-    return infer_context_size(model_path) or 0
+    native = infer_context_size(model_path)
+    if native is None:
+        return INFERENCE_CONTEXT_CAP
+    return min(native, INFERENCE_CONTEXT_CAP)
+
+
+def _resolve_gpu_layers(backend: str) -> int:
+    if backend != "llama.cpp":
+        return 0
+    return 99 if _has_nvidia_gpu() else 0
 
 
 def build_node_config(
@@ -81,6 +117,10 @@ def build_node_config(
     )
 
     resolved_model = _resolve_model_path(req.model_path, root)
+    threads = _resolve_threads()
+    extra_args: list[str] = []
+    if req.role == NodeRole.WORKER and req.backend == "llama.cpp":
+        extra_args.extend(["-t", str(threads)])
 
     inference = InferenceConfig(
         backend=req.backend,
@@ -88,10 +128,11 @@ def build_node_config(
         rpc_server_bin=_venv_binary(root, "ggml-rpc-server"),
         model_path=resolved_model,
         llama_server_port=8080,
-        n_gpu_layers=99,
+        n_gpu_layers=_resolve_gpu_layers(req.backend),
         context_size=_resolve_context_size(resolved_model, req.backend),
-        threads=2,
+        threads=threads,
         rpc_cache=True,
+        extra_args=extra_args,
     )
 
     # When discovery is enabled, bind to all interfaces so other PCs on the LAN

@@ -49,11 +49,12 @@ export async function stopNode(): Promise<unknown> {
 export async function sendChat(
   messages: ChatMessage[],
   stream: boolean,
+  maxTokens = 512,
 ): Promise<Response> {
   return fetch(`${BASE}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages, stream }),
+    body: JSON.stringify({ messages, stream, max_tokens: maxTokens }),
   });
 }
 

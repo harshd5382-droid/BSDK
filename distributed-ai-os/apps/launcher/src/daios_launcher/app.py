@@ -18,7 +18,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from daios_launcher.autostart_windows import install_task, task_installed, uninstall_task
-from daios_launcher.config_gen import StartRequest, build_node_config, write_runtime_config
+from daios_launcher.config_gen import (
+    DEFAULT_CHAT_MAX_TOKENS,
+    StartRequest,
+    build_node_config,
+    write_runtime_config,
+)
 from daios_launcher.models_manager import (
     delete_model,
     download_model,
@@ -492,9 +497,8 @@ class LauncherApp:
                 "model": "daios",
                 "messages": messages,
                 "stream": req.stream,
+                "max_tokens": req.max_tokens if req.max_tokens is not None else DEFAULT_CHAT_MAX_TOKENS,
             }
-            if req.max_tokens is not None:
-                body["max_tokens"] = req.max_tokens
             url = f"http://127.0.0.1:{api_port}/v1/chat/completions"
 
             if req.stream:

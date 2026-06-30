@@ -290,13 +290,18 @@ class InferenceManager:
         if inf.model_path:
             cmd.extend(["-m", inf.model_path])
         if inf.threads:
-            cmd.extend(["-t", str(inf.threads)])
+            cmd.extend(["-t", str(inf.threads), "-tb", str(inf.threads)])
+
+        # Single slot avoids parallel requests competing for CPU/RPC bandwidth.
+        cmd.extend(["-np", "1", "--cont-batching", "--mlock"])
 
         rpc_endpoints = self.config.rpc_endpoints(self._peer_hosts)
         if rpc_endpoints:
             cmd.extend(["--rpc", ",".join(rpc_endpoints)])
         if inf.tensor_split:
             cmd.extend(["--tensor-split", inf.tensor_split])
+        if inf.extra_args:
+            cmd.extend(inf.extra_args)
 
         self.llama_server = ManagedProcess(
             name="llama-server", command=cmd, log_path=self._log_path("llama-server")

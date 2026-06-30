@@ -5,7 +5,7 @@ from __future__ import annotations
 import struct
 from pathlib import Path
 
-from daios_launcher.config_gen import StartRequest, build_node_config
+from daios_launcher.config_gen import INFERENCE_CONTEXT_CAP, StartRequest, build_node_config
 from daios_launcher.gguf_context import GGUF_MAGIC, infer_context_size, read_gguf_metadata
 from daios_protocol.config import NodeRole
 
@@ -58,7 +58,8 @@ def test_build_node_config_uses_model_context(tmp_path: Path):
     models_dir = tmp_path / "models"
     models_dir.mkdir()
     model = models_dir / "test-model.gguf"
-    write_test_gguf(model, context_length=65536)
+    # Native context at/above the cap is clamped to INFERENCE_CONTEXT_CAP.
+    write_test_gguf(model, context_length=131072)
 
     req = StartRequest(
         role=NodeRole.COORDINATOR,
@@ -67,7 +68,7 @@ def test_build_node_config_uses_model_context(tmp_path: Path):
         backend="llama.cpp",
     )
     config = build_node_config(req, project_root=tmp_path)
-    assert config.inference.context_size == 65536
+    assert config.inference.context_size == INFERENCE_CONTEXT_CAP
 
 
 def test_build_node_config_mock_backend_uses_auto_context(tmp_path: Path):
