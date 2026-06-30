@@ -12,7 +12,7 @@ if command -v uv >/dev/null 2>&1; then
   # Reinstall protocol last: uv downgrades path deps to non-editable wheels
   # when installing node/launcher, which leaves stale copies in site-packages.
   uv pip install --python "${VENV}/bin/python" -e "${ROOT}/packages/protocol"
-  uv pip install --python "${VENV}/bin/python" pytest pytest-asyncio httpx ruff hatchling
+  uv pip install --python "${VENV}/bin/python" pytest pytest-asyncio httpx ruff hatchling zeroconf
 else
   if [[ ! -d "${VENV}" ]]; then
     python3 -m venv "${VENV}"
@@ -24,6 +24,7 @@ else
   pip install -e "${ROOT}/apps/launcher"
   pip install -e "${ROOT}/packages/protocol"
   pip install pytest pytest-asyncio httpx ruff
+  pip install zeroconf 2>/dev/null || true
 fi
 
 echo "Installed daios-protocol, daios-node, and daios-launcher into ${VENV}"

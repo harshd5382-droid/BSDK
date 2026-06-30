@@ -173,9 +173,20 @@ class InferenceManager:
         self._log_dir = Path(
             os.environ.get("DAIOS_LOG_DIR", Path(tempfile.gettempdir()) / "daios-logs")
         )
+        self._peer_hosts: list[str] | None = None
 
     def _log_path(self, name: str) -> Path:
         return self._log_dir / f"{self.config.node_id}-{name}.log"
+
+    def set_peer_hosts(self, hosts: list[str]) -> None:
+        """Update RPC peer hosts (Generation 2 discovery). Restarts llama-server if running."""
+        if hosts == self._peer_hosts:
+            return
+        self._peer_hosts = hosts
+        if self.config.runs_coordinator and self.config.inference.backend != "mock":
+            if self.llama_server and self.llama_server.state == ProcessState.RUNNING:
+                self.llama_server.stop()
+                self._start_llama_server()
 
     def start(self) -> None:
         if self.config.inference.backend == "mock":
@@ -275,7 +286,7 @@ class InferenceManager:
         if inf.threads:
             cmd.extend(["-t", str(inf.threads)])
 
-        rpc_endpoints = self.config.rpc_endpoints()
+        rpc_endpoints = self.config.rpc_endpoints(self._peer_hosts)
         if rpc_endpoints:
             cmd.extend(["--rpc", ",".join(rpc_endpoints)])
         if inf.tensor_split:

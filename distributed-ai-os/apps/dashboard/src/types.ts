@@ -45,7 +45,7 @@ export interface PeerStatus {
 }
 
 export interface ClusterStatus {
-  coordinator_node_id: string;
+  coordinator_node_id: string | null;
   peers: PeerStatus[];
   rpc_endpoints: string[];
   inbound_rpc_clients: number;
@@ -53,6 +53,32 @@ export interface ClusterStatus {
   local_resources: ResourceUsage | null;
   local_model_usage: ModelUsage | null;
   coordinator_ip: string | null;
+  membership?: MembershipView | null;
+}
+
+export interface MemberInfo {
+  node_id: string;
+  host: string;
+  api_port: number;
+  rpc_port: number;
+  role: string;
+  status: string;
+  resources: ResourceUsage | null;
+}
+
+export interface CoordinatorLease {
+  request_id: string;
+  coordinator_node_id: string;
+  worker_endpoints: string[];
+}
+
+export interface MembershipView {
+  local_node_id: string;
+  members: MemberInfo[];
+  generation: number;
+  membership_version: number;
+  active_leases: CoordinatorLease[];
+  cluster_name: string | null;
 }
 
 export type NodeRole = "coordinator" | "worker" | "hybrid";
@@ -66,6 +92,8 @@ export interface StartRequest {
   backend?: string;
   api_port?: number;
   rpc_port?: number;
+  discovery_enabled?: boolean;
+  cluster_name?: string;
 }
 
 export type WizardStep = "welcome" | "role" | "connect" | "live";

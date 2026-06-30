@@ -9,7 +9,14 @@ from daios_launcher.gguf_context import infer_context_size
 import yaml
 from pydantic import BaseModel
 
-from daios_protocol.config import InferenceConfig, NetworkConfig, NodeConfig, NodeRole, PeerConfig
+from daios_protocol.config import (
+    DiscoveryConfig,
+    InferenceConfig,
+    NetworkConfig,
+    NodeConfig,
+    NodeRole,
+    PeerConfig,
+)
 
 
 class StartRequest(BaseModel):
@@ -21,6 +28,8 @@ class StartRequest(BaseModel):
     backend: str = "llama.cpp"
     api_port: int = 8000
     rpc_port: int = 50052
+    discovery_enabled: bool = False
+    cluster_name: str = "daios"
 
 
 def _resolve_model_path(model_path: str | None, project_root: Path) -> str | None:
@@ -55,7 +64,7 @@ def build_node_config(
 ) -> NodeConfig:
     root = project_root or Path.cwd()
     peers: list[PeerConfig] = []
-    if req.role in (NodeRole.COORDINATOR, NodeRole.HYBRID) and req.peer_host:
+    if not req.discovery_enabled and req.role in (NodeRole.COORDINATOR, NodeRole.HYBRID) and req.peer_host:
         peers.append(
             PeerConfig(
                 id="peer-1",
@@ -64,6 +73,11 @@ def build_node_config(
                 api_port=req.peer_api_port,
             )
         )
+
+    discovery = DiscoveryConfig(
+        enabled=req.discovery_enabled,
+        cluster_name=req.cluster_name,
+    )
 
     resolved_model = _resolve_model_path(req.model_path, root)
 
@@ -89,6 +103,7 @@ def build_node_config(
         ),
         peers=peers,
         inference=inference,
+        discovery=discovery,
     )
 
 

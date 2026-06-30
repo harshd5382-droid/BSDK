@@ -14,21 +14,64 @@ WORKER_CONFIG = ROOT / "examples" / "two-node" / "worker-mock.yaml"
 COORD_CONFIG = ROOT / "examples" / "two-node" / "coordinator-mock.yaml"
 
 
+def _free_ports(*ports: int) -> None:
+    for port in ports:
+        subprocess.run(
+            ["fuser", "-k", f"{port}/tcp"],
+            capture_output=True,
+            check=False,
+        )
+
+
+def _wait_for_health(url: str, expected_node_id: str, timeout: float = 10.0) -> None:
+    deadline = time.monotonic() + timeout
+    last_error = ""
+    while time.monotonic() < deadline:
+        try:
+            response = httpx.get(url, timeout=2.0)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("node_id") == expected_node_id:
+                    return
+                last_error = f"wrong node_id: {data.get('node_id')}"
+        except httpx.HTTPError as exc:
+            last_error = str(exc)
+        time.sleep(0.5)
+    raise RuntimeError(f"Node at {url} not ready ({last_error})")
+
+
 @pytest.fixture(scope="module")
 def mock_cluster():
     """Start worker and coordinator nodes for integration tests."""
+    _free_ports(8000, 8001, 50052, 50053)
+    time.sleep(1)
+
     worker = subprocess.Popen(
         [sys.executable, "-m", "daios_node.cli", "-c", str(WORKER_CONFIG)],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    time.sleep(2)
+    try:
+        _wait_for_health("http://127.0.0.1:8001/health", "worker-mock")
+    except RuntimeError:
+        worker.terminate()
+        worker.wait(timeout=5)
+        raise
+
     coord = subprocess.Popen(
         [sys.executable, "-m", "daios_node.cli", "-c", str(COORD_CONFIG)],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    time.sleep(2)
+    try:
+        _wait_for_health("http://127.0.0.1:8000/health", "coordinator-mock")
+    except RuntimeError:
+        coord.terminate()
+        worker.terminate()
+        coord.wait(timeout=5)
+        worker.wait(timeout=5)
+        raise
+
     yield
     coord.terminate()
     worker.terminate()

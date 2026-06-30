@@ -65,9 +65,9 @@ export default function App() {
   }, [status, step]);
 
   const handleStartCoordinator = useCallback(
-    async (peerHost: string, modelPath: string) => {
+    async (peerHost: string, modelPath: string, discovery: boolean) => {
       if (!system) return;
-      if (isLocalPeer(peerHost, system)) {
+      if (!discovery && isLocalPeer(peerHost, system)) {
         setStartError(
           `Worker IP cannot be this PC (${system.lan_ip}). Choose Worker on this machine and Coordinator on the other PC.`,
         );
@@ -78,12 +78,13 @@ export default function App() {
       setStartError(null);
       const req: StartRequest = {
         role: "coordinator",
-        peer_host: peerHost.trim(),
+        peer_host: discovery ? undefined : peerHost.trim(),
         peer_rpc_port: 50052,
         peer_api_port: 8001,
         model_path: modelPath || undefined,
         backend: modelPath ? "llama.cpp" : "mock",
         api_port: 8000,
+        discovery_enabled: discovery,
       };
       try {
         await startNode(req);
@@ -100,7 +101,7 @@ export default function App() {
     [refresh, system],
   );
 
-  const handleStartWorker = useCallback(async () => {
+  const handleStartWorker = useCallback(async (discovery: boolean) => {
     setLoading(true);
     setStartError(null);
     const req: StartRequest = {
@@ -108,6 +109,7 @@ export default function App() {
       backend: "llama.cpp",
       api_port: 8001,
       rpc_port: 50052,
+      discovery_enabled: discovery,
     };
     try {
       await startNode(req);

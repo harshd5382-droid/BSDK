@@ -24,8 +24,10 @@ def validate_start_request(req: StartRequest, local_ips: set[str] | None = None)
         return None
 
     if req.role in (NodeRole.COORDINATOR, NodeRole.HYBRID):
+        if req.discovery_enabled:
+            return None
         if not req.peer_host or not req.peer_host.strip():
-            return "Enter the worker PC's LAN IP (not this computer's address)."
+            return "Enter the worker PC's LAN IP (not this computer's address), or enable Auto Discovery."
         peer = req.peer_host.strip()
         if is_local_address(peer, local_ips):
             lan = get_lan_ip()

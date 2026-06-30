@@ -437,8 +437,8 @@ Added one-click UI for Generation 1:
 - Two-PC LAN: run dashboard on each machine; worker shares `LAN_IP:50052`; coordinator enters worker IP and clicks Connect and Start.
 - Verified: launcher serves dashboard (HTTP 200), start/stop mock node, chat via `/api/launcher/chat`. Test suite: 23/23 passing.
 
-Remaining (cross-machine extensions, not blocking Generation 1 sign-off):
+Remaining (cross-machine extensions, **deferred** — not blocking Generation 1 sign-off):
 
-- Two physical/virtual machines over LAN for latency-realistic numbers.
-- Heterogeneous hardware benchmark (CPU + GPU split via RPC).
-- Memory-pooling validation with a model exceeding single-node RAM.
+- Two physical/virtual machines over LAN for latency-realistic numbers → harness: `distributed-ai-os/benchmarks/run_lan_benchmark.sh` (see `benchmarks/results/gen1-deferred-status.md`)
+- Heterogeneous hardware benchmark (CPU + GPU split via RPC) → harness: `distributed-ai-os/benchmarks/run_heterogeneous_benchmark.py`
+- Memory-pooling validation with a model exceeding single-node RAM → harness: `distributed-ai-os/benchmarks/run_oversized_model_benchmark.py`

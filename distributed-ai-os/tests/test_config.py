@@ -51,3 +51,41 @@ def test_invalid_backend():
         NodeConfig.model_validate(
             {"node_id": "x", "role": "worker", "inference": {"backend": "invalid"}}
         )
+
+
+def test_gen2_discovery_config_defaults():
+    config = NodeConfig.model_validate({"node_id": "x", "role": "worker"})
+    assert config.discovery.enabled is False
+    assert config.discovery.cluster_name == "daios"
+    assert config.discovery_enabled is False
+
+
+def test_gen2_discovery_config_enabled():
+    config = NodeConfig.model_validate(
+        {
+            "node_id": "x",
+            "role": "hybrid",
+            "discovery": {"enabled": True, "cluster_name": "home"},
+        }
+    )
+    assert config.discovery_enabled is True
+    assert config.discovery.cluster_name == "home"
+
+
+def test_rpc_endpoints_with_peer_hosts():
+    config = NodeConfig.model_validate(
+        {
+            "node_id": "c1",
+            "role": "coordinator",
+            "peers": [{"id": "w1", "host": "manual", "rpc_port": 50052}],
+        }
+    )
+    assert config.rpc_endpoints(["10.0.0.2"]) == ["10.0.0.2:50052"]
+    assert config.rpc_endpoints() == ["manual:50052"]
+
+
+def test_load_discovered_coordinator_config():
+    discovered = Path(__file__).resolve().parents[1] / "examples" / "two-node-discovered"
+    config = load_config(discovered / "coordinator-mdns.yaml")
+    assert config.discovery.enabled is True
+    assert config.discovery.cluster_name == "daios-home"

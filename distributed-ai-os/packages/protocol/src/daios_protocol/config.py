@@ -1,4 +1,4 @@
-"""Node configuration schema for Generation 1 manual two-node setup."""
+"""Node configuration schema for DAIOS nodes (Generation 1+)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class NodeRole(str, Enum):
-    """Generation 1 node roles. Every node runs the same software; role selects behavior."""
+    """Node role defaults. In Generation 2+ any node may coordinate per-request."""
 
     COORDINATOR = "coordinator"
     WORKER = "worker"
@@ -31,6 +31,43 @@ class NetworkConfig(BaseModel):
     bind_host: str = "0.0.0.0"
     api_port: int = 8000
     rpc_port: int = 50052
+
+
+class DiscoveryConfig(BaseModel):
+    """Automatic peer discovery (Generation 2+)."""
+
+    enabled: bool = False
+    mdns: bool = True
+    cluster_name: str = "daios"
+    advertise_interval: float = 5.0
+    listen_port: int | None = None  # defaults to network.api_port
+
+
+class SecurityConfig(BaseModel):
+    """Transport and API security (Generation 2+)."""
+
+    mtls_enabled: bool = False
+    ca_cert: str | None = None
+    node_cert: str | None = None
+    node_key: str | None = None
+    api_token: str | None = None
+    auto_generate_certs: bool = True
+
+
+class MembershipConfig(BaseModel):
+    """Gossip membership and heartbeat settings (Generation 2+)."""
+
+    heartbeat_interval: float = 5.0
+    failure_timeout: float = 15.0
+    gossip_interval: float = 10.0
+
+
+class ResourceCapsConfig(BaseModel):
+    """Administrator-configured contribution limits."""
+
+    max_cpu_percent: float | None = None
+    max_ram_gb: float | None = None
+    max_gpu_percent: float | None = None
 
 
 class InferenceConfig(BaseModel):
@@ -65,6 +102,10 @@ class NodeConfig(BaseModel):
     network: NetworkConfig = Field(default_factory=NetworkConfig)
     peers: list[PeerConfig] = Field(default_factory=list)
     inference: InferenceConfig = Field(default_factory=InferenceConfig)
+    discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
+    membership: MembershipConfig = Field(default_factory=MembershipConfig)
+    resource_caps: ResourceCapsConfig = Field(default_factory=ResourceCapsConfig)
 
     @property
     def runs_rpc_server(self) -> bool:
@@ -74,13 +115,25 @@ class NodeConfig(BaseModel):
     def runs_coordinator(self) -> bool:
         return self.role in (NodeRole.COORDINATOR, NodeRole.HYBRID)
 
-    def rpc_endpoints(self) -> list[str]:
-        """Return host:port strings for --rpc flag (local + configured peers)."""
+    @property
+    def discovery_enabled(self) -> bool:
+        return self.discovery.enabled
+
+    def rpc_endpoints(self, peer_hosts: list[str] | None = None) -> list[str]:
+        """Return host:port strings for --rpc flag (local + peers).
+
+        When ``peer_hosts`` is provided (Generation 2 discovery), those hosts
+        replace the static ``peers[]`` list.
+        """
         endpoints: list[str] = []
         if self.runs_rpc_server:
             endpoints.append(f"127.0.0.1:{self.network.rpc_port}")
-        for peer in self.peers:
-            endpoints.append(f"{peer.host}:{peer.rpc_port}")
+        if peer_hosts is not None:
+            for host in peer_hosts:
+                endpoints.append(f"{host}:{self.network.rpc_port}")
+        else:
+            for peer in self.peers:
+                endpoints.append(f"{peer.host}:{peer.rpc_port}")
         return endpoints
 
 

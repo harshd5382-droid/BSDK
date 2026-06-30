@@ -4,7 +4,7 @@ import type { SystemInfo } from "../types";
 
 interface Props {
   system: SystemInfo;
-  onStart: (peerHost: string, modelPath: string) => void;
+  onStart: (peerHost: string, modelPath: string, discovery: boolean) => void;
   onBack: () => void;
   loading: boolean;
   error: string | null;
@@ -28,10 +28,12 @@ export default function ConnectCoordinator({
 }: Props) {
   const [peerHost, setPeerHost] = useState("");
   const [modelPath, setModelPath] = useState(system.models[0] ?? "");
+  const [autoDiscovery, setAutoDiscovery] = useState(false);
 
   const peerIsSelf = peerHost.trim() ? isLocalPeer(peerHost, system) : false;
   const canStart =
-    peerHost.trim() && !peerIsSelf && (modelPath || system.models.length === 0);
+    autoDiscovery ||
+    (peerHost.trim() && !peerIsSelf && (modelPath || system.models.length === 0));
 
   return (
     <div className="max-w-lg mx-auto">
@@ -43,6 +45,19 @@ export default function ConnectCoordinator({
       </p>
 
       <div className="space-y-5 mb-8">
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={autoDiscovery}
+            onChange={(e) => setAutoDiscovery(e.target.checked)}
+            className="w-4 h-4 accent-accent"
+          />
+          <span className="text-sm text-fabric-600">
+            <strong className="text-white">Auto Discovery</strong> — find workers on LAN via mDNS
+          </span>
+        </label>
+
+        {!autoDiscovery && (
         <Field label="Other PC's IP address">
           <input
             type="text"
@@ -52,6 +67,7 @@ export default function ConnectCoordinator({
             className="w-full bg-fabric-800 border border-fabric-700 rounded-lg px-4 py-3 font-display text-sm text-white placeholder:text-fabric-600 focus:outline-none focus:border-accent"
           />
         </Field>
+        )}
 
         {system.models.length > 0 ? (
           <Field label="Model">
@@ -108,6 +124,7 @@ export default function ConnectCoordinator({
           onStart(
             peerHost.trim(),
             modelPath ? modelPath : "",
+            autoDiscovery,
           )
         }
         className="cursor-pointer w-full py-4 bg-accent text-fabric-950 font-semibold rounded-lg text-lg hover:bg-accent-dim disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"

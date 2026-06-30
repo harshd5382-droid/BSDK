@@ -1,8 +1,8 @@
-# Distributed AI OS — Generation 1 Prototype
+# Distributed AI OS
 
-Peer-to-Peer Distributed AI Operating System — practical two-node prototype validating distributed inference via **llama.cpp** and **GGML RPC**.
+Peer-to-Peer Distributed AI Operating System — Generation 1 prototype validated; **Generation 2** adds automatic LAN discovery, gossip membership, and ephemeral per-request coordinators.
 
-## Generation 1 Goals
+## Generation 1 Goals (Complete)
 
 - Two-node distributed inference (memory pooling across machines)
 - llama.cpp + `ggml-rpc-server` integration
@@ -12,6 +12,16 @@ Peer-to-Peer Distributed AI Operating System — practical two-node prototype va
 - Benchmark suite and integration tests
 - Coding assistant compatibility (OpenAI API clients)
 
+## Generation 2 Features (Implemented)
+
+- mDNS automatic peer discovery (`discovery.enabled: true`)
+- Gossip membership with heartbeat and failure detection
+- Resource advertisements (CPU, RAM, GPU best-effort)
+- Ephemeral per-request coordinator leases
+- Optional API Bearer token and dev mTLS
+- Dashboard "Auto Discovery" wizard toggle
+- Backward compatible — Gen 1 manual YAML still works when discovery is off
+
 ## Repository Layout
 
 ```
@@ -20,7 +30,8 @@ distributed-ai-os/
   apps/launcher/      One-click launcher + control API
   apps/dashboard/     React wizard UI
   packages/protocol/  Shared config and health types
-  examples/two-node/  Coordinator + worker YAML configs
+  examples/two-node/           Coordinator + worker YAML (Gen 1 manual)
+  examples/two-node-discovered/  mDNS discovery configs (Gen 2)
   deploy/docker/      Docker Compose for mock cluster
   benchmarks/         Latency/throughput benchmarks
   scripts/            Build and dev helpers
@@ -40,9 +51,13 @@ make dashboard
 
 This builds the React dashboard and opens `http://127.0.0.1:8090`.
 
-**Two PCs over LAN:**
+**Two PCs over LAN (manual peer IP):**
 1. On **PC B** (worker): run `make dashboard` → choose **Help another PC** → **Start Worker** → share the displayed IP (`192.168.x.x:50052`).
 2. On **PC A** (coordinator): run `make dashboard` → choose **Run the AI here** → enter PC B's IP → **Connect and Start**.
+
+**Two PCs over LAN (auto discovery — Gen 2):**
+1. On both PCs: run `make dashboard` → enable **Auto Discovery** when starting worker or coordinator.
+2. Nodes join the same mDNS cluster (`cluster_name: daios`) without entering peer IPs.
 
 Development mode (Vite hot reload + launcher API):
 
@@ -52,6 +67,8 @@ Development mode (Vite hot reload + launcher API):
 
 # Terminal 2
 cd apps/dashboard && npm run dev
+```
+
 ## Quick Start (Mock Mode — No llama.cpp Required)
 
 For terminal-only testing without the dashboard:
@@ -77,6 +94,22 @@ Or use the helper script:
 ```bash
 ./scripts/run-mock-cluster.sh
 ```
+
+## Generation 2 Discovery (Mock Mode)
+
+```bash
+# Terminal 1 — worker with mDNS
+daios-node -c examples/two-node-discovered/worker-mdns.yaml
+
+# Terminal 2 — coordinator with mDNS (discovers worker automatically)
+daios-node -c examples/two-node-discovered/coordinator-mdns.yaml
+
+# Check membership
+curl -s http://127.0.0.1:8000/api/v1/membership | jq .
+curl -s http://127.0.0.1:8000/api/v1/cluster | jq .generation
+```
+
+Install mDNS support: `pip install zeroconf` (included in `make install`).
 
 ## Two-Node Production Path (llama.cpp + GGML RPC)
 
@@ -156,8 +189,9 @@ Works with Continue, Cursor, Open WebUI, and other OpenAI API clients.
 | Endpoint | Description |
 |----------|-------------|
 | `GET /health` | Node health and inference process status |
-| `GET /metrics` | Basic operational metrics |
-| `GET /api/v1/cluster` | Peer list and RPC endpoints |
+| `GET /metrics` | Operational metrics (includes `generation`) |
+| `GET /api/v1/cluster` | Peer list / membership view and RPC endpoints |
+| `GET /api/v1/membership` | Gen 2 membership view (when discovery enabled) |
 | `GET /v1/models` | OpenAI-compatible model list |
 | `POST /v1/chat/completions` | OpenAI-compatible chat inference |
 
@@ -183,20 +217,39 @@ flowchart LR
 
 Every node runs identical `daios-node` software. Role (`coordinator`, `worker`, `hybrid`) is configuration-only — matching the Phase 1 vision of no permanent master nodes.
 
+## Architecture (Generation 2)
+
+```mermaid
+flowchart LR
+    Client[OpenAI Client] --> API[Node API :8000]
+    API --> COORD[CoordinatorRegistry]
+    API --> MEM[MembershipService]
+  DISC[mDNS Discovery] --> MEM
+    MEM --> RES[Resource Ads]
+    COORD --> INF[InferenceManager]
+    INF --> LS[llama-server]
+    LS --> RPC[GGML RPC]
+    RPC --> RS[Remote ggml-rpc-server]
+```
+
+See [Generation 2 architecture](docs/architecture-gen2.md) for full sequence diagrams.
+
 ## Documentation
 
-- [Phase 1 research & architecture strategy](docs/phase-1-research-architecture.md) — full multi-generation research document
-- [Generation 1 architecture](docs/architecture-gen1.md) — implementation reference for the current prototype
+- [Phase 2 engineering specification](docs/phase-2-engineering-specification.md) — master spec and index
+- [Phase 1 research & architecture strategy](docs/phase-1-research-architecture.md) — multi-generation research
+- [Generation 1 architecture](docs/architecture-gen1.md) — manual peer prototype
+- [Generation 2 architecture](docs/architecture-gen2.md) — discovery, membership, coordinator
 
 ## Research Findings
 
-| Technology | Generation 1 Decision | Rationale |
-|------------|----------------------|-----------|
+| Technology | Decision | Rationale |
+|------------|----------|-----------|
 | llama.cpp | **Reuse** | Mature GGUF inference, OpenAI API via llama-server |
-| GGML RPC | **Reuse** | Proven memory pooling across nodes; PoC stage, LAN-only |
+| GGML RPC | **Reuse** | Proven memory pooling across nodes; LAN-only PoC |
 | OpenAI API | **Reuse** | llama-server native + node proxy |
-| Discovery | **Defer to Gen 2** | Manual YAML peer config for prototype |
-| Scheduler | **Defer to Gen 3** | llama.cpp tensor-split for Gen 1 |
+| Discovery | **mDNS (Gen 2)** | Auto-join on LAN; libp2p planned for WAN |
+| Scheduler | **Defer to Gen 3** | Greedy placement in Gen 2; custom scheduler later |
 | Native distributed inference | **Defer to Gen 4** | Replace only if benchmarking justifies |
 
 ## License

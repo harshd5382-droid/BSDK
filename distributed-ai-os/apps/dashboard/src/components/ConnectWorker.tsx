@@ -3,7 +3,7 @@ import type { SystemInfo } from "../types";
 
 interface Props {
   system: SystemInfo;
-  onStart: () => void;
+  onStart: (discovery: boolean) => void;
   onBack: () => void;
   loading: boolean;
   error: string | null;
@@ -16,6 +16,7 @@ export default function ConnectWorker({
   loading,
   error,
 }: Props) {
+  const [autoDiscovery, setAutoDiscovery] = useState(true);
   return (
     <div className="max-w-lg mx-auto text-center">
       <h2 className="font-display text-2xl font-semibold mb-2">
@@ -30,8 +31,19 @@ export default function ConnectWorker({
         animate={{ opacity: 1, scale: 1 }}
         className="bg-fabric-800 border border-accent/30 rounded-xl p-8 mb-8"
       >
+        <label className="flex items-center justify-center gap-3 cursor-pointer mb-4">
+          <input
+            type="checkbox"
+            checked={autoDiscovery}
+            onChange={(e) => setAutoDiscovery(e.target.checked)}
+            className="w-4 h-4 accent-accent"
+          />
+          <span className="text-sm text-fabric-600">
+            <strong className="text-white">Auto Discovery</strong> — join cluster via mDNS
+          </span>
+        </label>
         <div className="text-xs uppercase tracking-wider text-fabric-600 mb-2">
-          Share this address
+          {autoDiscovery ? "LAN address (auto-discovered)" : "Share this address"}
         </div>
         <div className="font-display text-3xl text-accent font-semibold select-all">
           {system.lan_ip}:50052
@@ -63,7 +75,7 @@ export default function ConnectWorker({
       <motion.button
         whileTap={{ scale: 0.97 }}
         disabled={loading}
-        onClick={onStart}
+        onClick={() => onStart(autoDiscovery)}
         className="cursor-pointer w-full py-4 bg-accent text-fabric-950 font-semibold rounded-lg text-lg hover:bg-accent-dim disabled:opacity-40 transition-colors duration-200"
       >
         {loading ? "Starting…" : "Start Worker"}
