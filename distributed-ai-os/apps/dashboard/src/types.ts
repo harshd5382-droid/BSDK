@@ -6,6 +6,41 @@ export interface SystemInfo {
   ram_total_gb: number;
   ram_available_gb: number;
   models: string[];
+  role?: string;
+  cluster_token?: string | null;
+  version?: VersionInfo | null;
+  autostart_task?: boolean;
+}
+
+export interface VersionInfo {
+  commit: string | null;
+  branch: string | null;
+  dirty: boolean;
+  error?: string | null;
+}
+
+export interface ModelInfo {
+  name: string;
+  path: string;
+  size_gb: number;
+  active: boolean;
+}
+
+export interface DownloadStatus {
+  status: "idle" | "downloading" | "complete" | "error";
+  filename: string | null;
+  bytes_done: number;
+  bytes_total: number | null;
+  error: string | null;
+  percent: number | null;
+}
+
+export interface WorkerRemoteStatus {
+  host: string;
+  launcher: string | null;
+  node_state: string | null;
+  role: string | null;
+  error: string | null;
 }
 
 export interface LauncherStatus {
@@ -16,6 +51,7 @@ export interface LauncherStatus {
   api_port: number | null;
   uptime_seconds: number;
   last_error: string | null;
+  launcher_role?: string | null;
 }
 
 export interface ResourceUsage {
@@ -98,7 +134,7 @@ export interface StartRequest {
 
 export type WizardStep = "welcome" | "role" | "connect" | "live";
 
-export type LiveTab = "cluster" | "chat";
+export type LiveTab = "cluster" | "chat" | "models";
 
 export interface ChatMessage {
   role: "user" | "assistant" | "system";

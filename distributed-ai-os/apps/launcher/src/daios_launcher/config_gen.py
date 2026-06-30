@@ -46,8 +46,9 @@ def _resolve_model_path(model_path: str | None, project_root: Path) -> str | Non
 
 
 def _venv_binary(project_root: Path, name: str) -> str:
-    candidate = project_root / ".venv" / "bin" / name
-    return str(candidate) if candidate.is_file() else name
+    from daios_launcher.platform_utils import resolve_venv_binary
+
+    return resolve_venv_binary(project_root, name)
 
 
 def _resolve_context_size(model_path: str | None, backend: str) -> int:

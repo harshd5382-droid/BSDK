@@ -4,14 +4,20 @@ from __future__ import annotations
 
 import logging
 import os
-import re
-import shutil
-import signal
 import subprocess
 import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+
+from daios_launcher.platform_utils import (
+    kill_port_listeners,
+    popen_kwargs,
+    resolve_venv_binary,
+    spawn_env,
+    terminate_process,
+    venv_bin_dir,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,41 +31,6 @@ class LauncherState(str, Enum):
 
 def _sanitize_log_text(text: str) -> str:
     return "".join(ch for ch in text if ch == "\n" or ch == "\t" or ord(ch) >= 32)
-
-
-def _kill_port_listeners(port: int) -> None:
-    """Terminate processes still bound to a TCP port (e.g. orphaned daios-node)."""
-    pids: set[int] = set()
-    try:
-        result = subprocess.run(
-            ["ss", "-ltnp", f"sport = :{port}"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        for match in re.finditer(r"pid=(\d+)", result.stdout):
-            pids.add(int(match.group(1)))
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        try:
-            subprocess.run(
-                ["fuser", "-k", f"{port}/tcp"],
-                capture_output=True,
-                timeout=5,
-                check=False,
-            )
-            time.sleep(0.5)
-            return
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return
-
-    for pid in pids:
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-    if pids:
-        time.sleep(0.5)
 
 
 @dataclass
@@ -79,7 +50,7 @@ class NodeProcess:
         if self.process and self.process.poll() is None:
             return
 
-        _kill_port_listeners(self.api_port)
+        kill_port_listeners(self.api_port)
 
         self.state = LauncherState.STARTING
         self.last_error = None
@@ -87,14 +58,15 @@ class NodeProcess:
         log_dir.mkdir(parents=True, exist_ok=True)
         self._log_path = log_dir / f"launcher-{self.node_id}.log"
 
-        daios_node = shutil.which("daios-node", path=str(venv_bin))
-        if not daios_node:
-            daios_node = str(venv_bin / "daios-node")
+        daios_node = resolve_venv_binary(project_root, "daios-node")
+        if not Path(daios_node).is_file():
+            found = os.environ.get("PATH", "")
+            import shutil
+
+            daios_node = shutil.which("daios-node", path=str(venv_bin)) or daios_node
 
         env = {
-            **os.environ,
-            "PATH": f"{venv_bin}{os.pathsep}{os.environ.get('PATH', '')}",
-            "LD_LIBRARY_PATH": str(venv_bin),
+            **spawn_env(venv_bin),
             "DAIOS_LOG_DIR": str(log_dir),
         }
 
@@ -106,7 +78,7 @@ class NodeProcess:
                 env=env,
                 stdout=self._log_handle,
                 stderr=subprocess.STDOUT,
-                start_new_session=True,
+                **popen_kwargs(),
             )
             time.sleep(1.0)
             if self.process.poll() is not None:
@@ -126,15 +98,14 @@ class NodeProcess:
             self._cleanup()
             self.state = LauncherState.STOPPED
             return
+        terminate_process(self.process, timeout=timeout)
         try:
-            os.killpg(self.process.pid, signal.SIGTERM)
-            self.process.wait(timeout=timeout)
-        except (ProcessLookupError, subprocess.TimeoutExpired):
-            try:
-                os.killpg(self.process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
             self.process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                self.process.kill()
+            except OSError:
+                pass
         self._cleanup()
         self.state = LauncherState.STOPPED
 
@@ -189,9 +160,9 @@ class ProcessManager:
     ) -> NodeProcess:
         if self.node:
             self.node.stop()
-        _kill_port_listeners(api_port)
+        kill_port_listeners(api_port)
         if rpc_port and rpc_port != api_port:
-            _kill_port_listeners(rpc_port)
+            kill_port_listeners(rpc_port)
         self.node = NodeProcess(
             config_path=config_path,
             role=role,
@@ -205,3 +176,7 @@ class ProcessManager:
         if self.node:
             self.node.stop()
             self.node = None
+
+
+def default_venv_bin(project_root: Path) -> Path:
+    return venv_bin_dir(project_root)

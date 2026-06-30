@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 import psutil
 
+from daios_node.platform_utils import system_disk_root
 from daios_protocol.config import NodeConfig, ResourceCapsConfig
 from daios_protocol.health import GpuInfo, ResourceAdvertisement, ResourceUsage
 
@@ -112,7 +113,7 @@ def gather_advertisement(
 ) -> ResourceAdvertisement:
     """Build a full resource advertisement for gossip."""
     mem = psutil.virtual_memory()
-    disk = shutil.disk_usage("/")
+    disk = shutil.disk_usage(system_disk_root())
     cpu_count = psutil.cpu_count(logical=True) or 1
     cpu_percent = psutil.cpu_percent(interval=None)
     available_cores = max(1, int(cpu_count * (1 - cpu_percent / 100)))

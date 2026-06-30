@@ -8,6 +8,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -113,15 +114,20 @@ class ManagedProcess:
 
 
 def _resolve_binary(configured: str, fallbacks: list[str]) -> str:
-    if Path(configured).is_file():
-        return configured
+    candidates = [configured]
+    if sys.platform == "win32" and not configured.lower().endswith(".exe"):
+        candidates.append(f"{configured}.exe")
+    for path in candidates:
+        if Path(path).is_file():
+            return path
     found = shutil.which(configured)
     if found:
         return found
     for name in fallbacks:
-        found = shutil.which(name)
-        if found:
-            return found
+        for variant in (name, f"{name}.exe" if sys.platform == "win32" else name):
+            found = shutil.which(variant)
+            if found:
+                return found
     return configured
 
 

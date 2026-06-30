@@ -1,10 +1,13 @@
 import { useCallback, useState } from "react";
 import { motion } from "motion/react";
+import { updateLauncher } from "../api/launcher";
 import TopologyGraph from "./TopologyGraph";
 import StatusPill from "./StatusPill";
 import ResourcePanel from "./ResourcePanel";
 import LiveTabBar from "./LiveTabBar";
 import ChatBot from "./ChatBot";
+import ModelManager from "./ModelManager";
+import WorkerPanel from "./WorkerPanel";
 import type { ClusterStatus, LauncherStatus, LiveTab, SystemInfo } from "../types";
 
 interface Props {
@@ -38,11 +41,29 @@ export default function LiveStatus({
     ? [
         { id: "cluster" as LiveTab, label: "Cluster" },
         { id: "chat" as LiveTab, label: "AI Chat" },
+        { id: "models" as LiveTab, label: "Models" },
       ]
     : [{ id: "cluster" as LiveTab, label: "Cluster" }];
 
   const [activeTab, setActiveTab] = useState<LiveTab>("cluster");
   const [copied, setCopied] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+
+  const versionLabel = system.version?.commit
+    ? `${system.version.commit}${system.version.dirty ? " (dirty)" : ""}`
+    : null;
+
+  const handleUpdate = useCallback(async () => {
+    setUpdating(true);
+    setUpdateError(null);
+    try {
+      await updateLauncher(true);
+    } catch (e) {
+      setUpdateError(e instanceof Error ? e.message : "Update failed");
+      setUpdating(false);
+    }
+  }, []);
 
   const apiPort = status.api_port ?? 8000;
   const apiUrl = `http://${system.lan_ip}:${apiPort}/v1`;
@@ -78,7 +99,20 @@ export default function LiveStatus({
           </div>
           <h2 className="display text-4xl md:text-5xl">Cluster Live</h2>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
+          {versionLabel && (
+            <span className="text-xs text-muted self-center font-display">
+              {versionLabel}
+            </span>
+          )}
+          <motion.button
+            whileTap={{ scale: 0.98 }}
+            onClick={handleUpdate}
+            disabled={updating || stopping}
+            className="btn-m px-5"
+          >
+            {updating ? "Updating…" : "Update"}
+          </motion.button>
           <motion.button
             whileTap={{ scale: 0.98 }}
             onClick={onRestart}
@@ -199,6 +233,12 @@ export default function LiveStatus({
           </div>
         )}
 
+        {updateError && (
+          <div className="mb-4 bg-surface-soft border-l-2 border-m-red px-4 py-3 text-body-strong text-sm font-light">
+            {updateError}
+          </div>
+        )}
+
         {status.last_error && (
           <div className="mb-4 bg-surface-soft border-l-2 border-m-red px-4 py-3 text-body-strong text-sm font-light">
             {status.last_error}
@@ -234,9 +274,27 @@ export default function LiveStatus({
         )}
 
         <div className="space-y-4">
+          {isCoordinator && (
+            <WorkerPanel
+              cluster={cluster}
+              clusterToken={system.cluster_token ?? null}
+              localLanIp={system.lan_ip}
+            />
+          )}
           <ResourcePanel status={status} cluster={cluster} />
         </div>
       </div>
+
+      {isCoordinator && (
+        <div
+          role="tabpanel"
+          aria-label="Model manager"
+          aria-hidden={activeTab !== "models"}
+          hidden={activeTab !== "models"}
+        >
+          <ModelManager />
+        </div>
+      )}
 
       {isCoordinator && (
         <div

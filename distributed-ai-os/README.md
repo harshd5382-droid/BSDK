@@ -234,6 +234,51 @@ flowchart LR
 
 See [Generation 2 architecture](docs/architecture-gen2.md) for full sequence diagrams.
 
+## Windows Worker (.exe)
+
+Ship worker PCs as a self-updating Windows agent. Workers contribute compute (RPC only); the **coordinator** downloads and loads GGUF models.
+
+### Build the worker bootstrapper (on Windows)
+
+```powershell
+cd distributed-ai-os
+.\scripts\windows\build-exe.ps1
+# Output: dist\daios-worker.exe
+```
+
+Prerequisites on worker PCs: **Git**, **Python 3.11+** (install via `winget install Git.Git` and `winget install Python.Python.3.12`).
+
+Optional — build llama.cpp RPC binaries:
+
+```powershell
+.\scripts\windows\build-llama-cpp.ps1 -InstallDir "$env:LOCALAPPDATA\BSDK\distributed-ai-os\.venv\Scripts"
+```
+
+### Worker quick start
+
+1. Run `daios-worker.exe` once (or double-click). It clones/updates the repo to `%LOCALAPPDATA%\BSDK`, installs Python deps, and starts as **worker** with **Auto Discovery**.
+2. On first run it registers a **Task Scheduler** job (`DAIOS Worker`) to auto-start at logon.
+3. The worker exposes its launcher API on `http://<LAN-IP>:8090` (token-protected for non-localhost).
+
+Uninstall auto-start:
+
+```powershell
+daios-worker.exe --uninstall
+```
+
+### Coordinator: model manager + remote workers
+
+On the coordinator PC, use `make dashboard` and choose **Coordinator** with **Auto Discovery**.
+
+- **Models** tab — download a GGUF (direct URL or `org/model:file.gguf`), select active model, delete old models.
+- **Remote Workers** panel — start/stop/update discovered worker PCs over the LAN (requires the same cluster token).
+
+Share the cluster token from the coordinator **system** API (`GET /api/launcher/system` → `cluster_token`) with worker installs, or set `--token <value>` when launching workers.
+
+### Security note
+
+The cluster token (`X-DAIOS-Token` header) is a **LAN shared secret**. Anyone on your network with the token can control worker launchers. Use only on trusted LANs; enable mTLS on nodes for stricter peer auth (Gen 2).
+
 ## Documentation
 
 - [Phase 2 engineering specification](docs/phase-2-engineering-specification.md) — master spec and index

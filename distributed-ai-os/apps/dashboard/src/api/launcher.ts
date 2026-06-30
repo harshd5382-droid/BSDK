@@ -1,9 +1,12 @@
 import type {
   ClusterStatus,
   ChatMessage,
+  DownloadStatus,
   LauncherStatus,
+  ModelInfo,
   StartRequest,
   SystemInfo,
+  VersionInfo,
 } from "../types";
 
 const BASE = "/api/launcher";
@@ -65,4 +68,50 @@ export function subscribeLogs(onLine: (line: string) => void): () => void {
     }
   };
   return () => es.close();
+}
+
+export async function getVersion(): Promise<VersionInfo> {
+  return fetchJson(`${BASE}/version`);
+}
+
+export async function updateLauncher(reexec = true): Promise<unknown> {
+  return fetchJson(`${BASE}/update`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reexec }),
+  });
+}
+
+export async function listModels(): Promise<{ models: ModelInfo[] }> {
+  return fetchJson(`${BASE}/models`);
+}
+
+export async function getDownloadStatus(): Promise<DownloadStatus> {
+  return fetchJson(`${BASE}/models/download/status`);
+}
+
+export async function downloadModel(body: {
+  url?: string;
+  hf_repo?: string;
+  filename?: string;
+}): Promise<unknown> {
+  return fetchJson(`${BASE}/models/download`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function selectModel(name: string): Promise<unknown> {
+  return fetchJson(`${BASE}/models/select`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function deleteModel(name: string): Promise<unknown> {
+  return fetchJson(`${BASE}/models/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
 }
