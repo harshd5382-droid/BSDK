@@ -39,6 +39,26 @@ class StartRequest(BaseModel):
     rpc_port: int = 50052
     discovery_enabled: bool = False
     cluster_name: str = "daios"
+    # Workload balancing across devices (coordinator only). `worker_share` is the
+    # percentage (0-100) of the model to push onto remote worker(s); the rest stays
+    # on this PC. `tensor_split` (raw llama.cpp value, e.g. "20,80") overrides it.
+    worker_share: int | None = None
+    tensor_split: str | None = None
+
+
+def compute_tensor_split(worker_share: int, num_workers: int = 1) -> str:
+    """Build a llama.cpp ``--tensor-split`` value from a worker-share percentage.
+
+    Device order is local-first: ``"<local>,<worker...>"``. With one worker,
+    ``worker_share=80`` -> ``"20,80"`` (most of the model runs on the worker PC).
+    Multiple workers split the worker share evenly.
+    """
+    worker_share = max(0, min(100, worker_share))
+    local = 100 - worker_share
+    if num_workers <= 1:
+        return f"{local},{worker_share}"
+    per = worker_share / num_workers
+    return ",".join([str(local)] + [f"{per:g}"] * num_workers)
 
 
 def _resolve_model_path(model_path: str | None, project_root: Path) -> str | None:
@@ -129,6 +149,15 @@ def build_node_config(
 
     resolved_model = _resolve_model_path(req.model_path, root)
 
+    # Resolve workload balancing: explicit tensor_split wins; otherwise derive it
+    # from worker_share for the known peer count (coordinator only).
+    tensor_split = req.tensor_split
+    if tensor_split is None and req.worker_share is not None and req.role in (
+        NodeRole.COORDINATOR,
+        NodeRole.HYBRID,
+    ):
+        tensor_split = compute_tensor_split(req.worker_share, max(1, len(peers)))
+
     inference = InferenceConfig(
         backend=req.backend,
         llama_server_bin=_runtime_binary(root, "llama-server"),
@@ -139,6 +168,7 @@ def build_node_config(
         context_size=_resolve_context_size(resolved_model, req.backend),
         threads=_default_threads(),
         rpc_cache=True,
+        tensor_split=tensor_split,
     )
 
     # When discovery is enabled, bind to all interfaces so other PCs on the LAN

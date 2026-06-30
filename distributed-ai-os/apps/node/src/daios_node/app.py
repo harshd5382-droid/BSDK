@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -25,12 +26,17 @@ from daios_node.membership import MembershipService
 from daios_node.mock_backend import router as mock_router
 from daios_node.model_usage import gather_model_usage
 from daios_node.peers import check_all_peers, count_inbound_rpc_clients
+from daios_node.resilience import forward_with_retry
 from daios_node.resources import gather_resources
 from daios_node.security import ApiTokenMiddleware, ensure_dev_certs
 
 logger = logging.getLogger(__name__)
 
 _COORDINATOR_PING_TTL = 30.0
+# Bounded retry for transient forward failures while a dropped worker is being
+# evicted and llama-server restarts with the remaining topology.
+_PROXY_RETRIES = int(os.environ.get("DAIOS_PROXY_RETRIES", "1"))
+_PROXY_RETRY_BACKOFF_S = float(os.environ.get("DAIOS_PROXY_RETRY_BACKOFF", "0.5"))
 
 
 def _is_loopback(ip: str) -> bool:
@@ -156,7 +162,41 @@ class NodeApp:
                 "peers_total": peers_total,
                 "generation": gen,
                 "active_coordinator_leases": len(self.coordinator_registry.active_leases()),
+                "requests": self.inference_tracker.snapshot(),
             }
+
+        @app.get("/metrics/prometheus")
+        async def metrics_prometheus() -> Response:
+            snap = self.inference_tracker.snapshot()
+            nid = self.config.node_id
+            gen = 2 if self.config.discovery_enabled else 1
+            labels = f'{{node="{nid}",role="{self.config.role.value}"}}'
+
+            def metric(name: str, help_: str, kind: str, value: float) -> list[str]:
+                return [
+                    f"# HELP {name} {help_}",
+                    f"# TYPE {name} {kind}",
+                    f"{name}{labels} {value}",
+                ]
+
+            lines: list[str] = []
+            lines += metric("daios_active_requests", "In-flight inference requests",
+                            "gauge", snap["active_requests"])
+            lines += metric("daios_requests_total", "Completed inference requests",
+                            "counter", snap["total_requests"])
+            lines += metric("daios_requests_failed_total", "Failed inference requests",
+                            "counter", snap["failed_requests"])
+            lines += metric("daios_request_latency_ms_avg", "Average request latency (ms)",
+                            "gauge", snap["avg_latency_ms"])
+            lines += metric("daios_tokens_total", "Total generated tokens",
+                            "counter", snap["total_tokens"])
+            lines += metric("daios_tokens_per_second", "Generation throughput (tokens/s)",
+                            "gauge", snap["tokens_per_second"])
+            lines += metric("daios_uptime_seconds", "Node uptime (s)",
+                            "gauge", round(self.inference.uptime_seconds(), 1))
+            lines += metric("daios_generation", "Active platform generation",
+                            "gauge", gen)
+            return Response("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
 
         @app.get("/api/v1/membership")
         async def membership_view():
@@ -287,23 +327,46 @@ class NodeApp:
                 if k.lower() not in {"host", "content-length"}
             }
 
-            self.inference_tracker.begin()
+            start = self.inference_tracker.begin()
+            if self._wants_stream(request, body):
+                return await self._proxy_stream(url, headers, body, request_id, start)
+
+            tokens = 0
+            failed = False
             try:
-                if self._wants_stream(request, body):
-                    return await self._proxy_stream(url, headers, body, request_id)
+                async def _send():
+                    return await self._http_client.request(
+                        request.method, url, headers=headers, content=body
+                    )
+
+                async def _on_retry(attempt: int) -> None:
+                    logger.warning(
+                        "Transient inference failure; retry %d/%d (resyncing peers)",
+                        attempt,
+                        _PROXY_RETRIES,
+                    )
+                    if self.config.discovery_enabled:
+                        self._sync_inference_peers()
 
                 try:
-                    response = await self._http_client.request(
-                        request.method,
-                        url,
-                        headers=headers,
-                        content=body,
+                    response = await forward_with_retry(
+                        _send,
+                        retries=_PROXY_RETRIES,
+                        is_transient=self._is_transient_failure,
+                        on_retry=_on_retry,
+                        backoff=_PROXY_RETRY_BACKOFF_S,
                     )
                 except httpx.ConnectError as exc:
+                    failed = True
                     raise HTTPException(
                         status_code=503,
                         detail=f"llama-server unavailable on port {self.config.inference.llama_server_port}: {exc}",
                     ) from exc
+
+                if response.status_code >= 500:
+                    failed = True
+                else:
+                    tokens = self._extract_tokens(response.content)
 
                 return Response(
                     content=response.content,
@@ -312,10 +375,28 @@ class NodeApp:
                     media_type=response.headers.get("content-type"),
                 )
             finally:
-                if not self._wants_stream(request, body):
-                    self.inference_tracker.end()
-                    if request_id:
-                        self.coordinator_registry.complete_lease(request_id)
+                self.inference_tracker.end(start, tokens=tokens, failed=failed)
+                if request_id:
+                    self.coordinator_registry.complete_lease(request_id)
+
+    @staticmethod
+    def _is_transient_failure(result: object) -> bool:
+        """True for retryable forward outcomes (connect errors or 5xx responses)."""
+        if isinstance(result, httpx.ConnectError):
+            return True
+        if isinstance(result, Exception):
+            return False  # other errors are not retried
+        status = getattr(result, "status_code", None)
+        return isinstance(status, int) and status >= 500
+
+    @staticmethod
+    def _extract_tokens(content: bytes) -> int:
+        """Best-effort completion-token count from an OpenAI-style response body."""
+        try:
+            data = json.loads(content)
+            return int((data.get("usage") or {}).get("completion_tokens", 0) or 0)
+        except (json.JSONDecodeError, ValueError, AttributeError, TypeError):
+            return 0
 
     @staticmethod
     def _wants_stream(request: Request, body: bytes) -> bool:
@@ -329,7 +410,12 @@ class NodeApp:
             return False
 
     async def _proxy_stream(
-        self, url: str, headers: dict, body: bytes, request_id: str | None = None
+        self,
+        url: str,
+        headers: dict,
+        body: bytes,
+        request_id: str | None = None,
+        start: float | None = None,
     ) -> StreamingResponse:
         if not self._http_client:
             raise HTTPException(status_code=503, detail="Node not ready")
@@ -345,6 +431,7 @@ class NodeApp:
         request = self._http_client.build_request("POST", url, headers=headers, content=body)
 
         async def event_stream():
+            failed = False
             try:
                 async with self._http_client.stream(
                     request.method,
@@ -355,12 +442,13 @@ class NodeApp:
                     async for chunk in response.aiter_bytes():
                         yield chunk
             except httpx.ConnectError as exc:
+                failed = True
                 msg = json.dumps(
                     {"error": {"message": f"llama-server unavailable: {exc}", "type": "inference_error"}}
                 )
                 yield f"data: {msg}\n\n".encode()
             finally:
-                self.inference_tracker.end()
+                self.inference_tracker.end(start, failed=failed)
                 if request_id:
                     self.coordinator_registry.complete_lease(request_id)
 

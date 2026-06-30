@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+defaults:
+  run:
+    working-directory: distributed-ai-os
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Create venv and install workspace
+        run: |
+          uv venv
+          uv pip install -e packages/protocol -e apps/node -e apps/launcher
+          uv pip install pytest pytest-asyncio httpx ruff zeroconf psutil huggingface_hub
+
+      - name: Ruff
+        run: uv run ruff check packages apps/node apps/launcher tests benchmarks
+
+      - name: Pytest
+        run: uv run pytest tests -q
+
+  dashboard:
+    name: dashboard build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: distributed-ai-os/apps/dashboard/package-lock.json
+      - name: Install and build
+        working-directory: distributed-ai-os/apps/dashboard
+        run: |
+          npm ci
+          npm run build
