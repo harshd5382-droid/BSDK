@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import mmap
 import struct
 from pathlib import Path
 
@@ -89,27 +90,36 @@ def _read_scalar(data: bytes, offset: int, value_type: int) -> tuple[object, int
 
 
 def read_gguf_metadata(path: Path) -> dict[str, object]:
-    """Return scalar metadata key/value pairs from a GGUF file header."""
-    data = path.read_bytes()
-    if len(data) < 24:
-        raise ValueError("file too small for GGUF header")
+    """Return scalar metadata key/value pairs from a GGUF file header.
 
-    (magic, version, _tensor_count, kv_count) = struct.unpack_from("<IIQQ", data, 0)
-    if magic != GGUF_MAGIC:
-        raise ValueError("not a GGUF file")
-    if version not in (2, 3):
-        raise ValueError(f"unsupported GGUF version: {version}")
+    The metadata block lives at the very start of the file, before the tensor
+    data. We memory-map the file (read-only) so only the header pages actually
+    touched are paged into RAM. This avoids loading a multi-GB model fully into
+    memory just to parse a few kilobytes of header, which previously caused
+    swap thrashing / full-system freezes on large models.
+    """
+    with path.open("rb") as fh:
+        size = path.stat().st_size
+        if size < 24:
+            raise ValueError("file too small for GGUF header")
 
-    offset = 24
-    metadata: dict[str, object] = {}
-    for _ in range(kv_count):
-        key, offset = _read_string(data, offset)
-        (value_type,) = struct.unpack_from("<I", data, offset)
-        offset += 4
-        value, offset = _read_scalar(data, offset, value_type)
-        if value is not None:
-            metadata[key] = value
-    return metadata
+        with mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ) as data:
+            (magic, version, _tensor_count, kv_count) = struct.unpack_from("<IIQQ", data, 0)
+            if magic != GGUF_MAGIC:
+                raise ValueError("not a GGUF file")
+            if version not in (2, 3):
+                raise ValueError(f"unsupported GGUF version: {version}")
+
+            offset = 24
+            metadata: dict[str, object] = {}
+            for _ in range(kv_count):
+                key, offset = _read_string(data, offset)
+                (value_type,) = struct.unpack_from("<I", data, offset)
+                offset += 4
+                value, offset = _read_scalar(data, offset, value_type)
+                if value is not None:
+                    metadata[key] = value
+            return metadata
 
 
 def infer_context_size(model_path: str | Path) -> int | None:

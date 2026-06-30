@@ -230,7 +230,9 @@ class LauncherApp:
                         detail += f" ({peer_status.error})"
                     raise HTTPException(status_code=503, detail=detail)
 
-            config = build_node_config(req, project_root=self.project_root)
+            config = await asyncio.to_thread(
+                build_node_config, req, project_root=self.project_root
+            )
             config_path = write_runtime_config(config, self.runtime_dir)
             self._last_start = req
             node = self.process_manager.start_node(
@@ -373,7 +375,9 @@ class LauncherApp:
                 if self._last_start and self._last_start.role == NodeRole.COORDINATOR:
                     self.process_manager.stop_node()
                     updated = self._last_start.model_copy(update={"model_path": req.name, "backend": "llama.cpp"})
-                    config = build_node_config(updated, project_root=self.project_root)
+                    config = await asyncio.to_thread(
+                        build_node_config, updated, project_root=self.project_root
+                    )
                     config_path = write_runtime_config(config, self.runtime_dir)
                     self._last_start = updated
                     self.process_manager.start_node(
