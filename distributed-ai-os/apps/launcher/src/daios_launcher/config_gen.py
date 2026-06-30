@@ -93,11 +93,19 @@ def build_node_config(
         rpc_cache=True,
     )
 
+    # When discovery is enabled, bind to all interfaces so other PCs on the LAN
+    # can reach this node's API port for gossip heartbeats. Without this, a
+    # coordinator bound to 127.0.0.1 would be undiscoverable from remote hosts.
+    if req.discovery_enabled:
+        bind_host = "0.0.0.0"
+    else:
+        bind_host = "0.0.0.0" if req.role == NodeRole.WORKER else "127.0.0.1"
+
     return NodeConfig(
         node_id=node_id or f"{req.role.value}-{req.api_port}",
         role=req.role,
         network=NetworkConfig(
-            bind_host="0.0.0.0" if req.role == NodeRole.WORKER else "127.0.0.1",
+            bind_host=bind_host,
             api_port=req.api_port,
             rpc_port=req.rpc_port,
         ),

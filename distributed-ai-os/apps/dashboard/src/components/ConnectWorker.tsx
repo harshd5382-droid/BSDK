@@ -45,35 +45,54 @@ export default function ConnectWorker({
               className="w-4 h-4 accent-m-blue-dark"
             />
             <span className="text-sm font-light text-body">
-              <span className="text-on-dark">Auto Discovery</span> — join cluster
-              via mDNS
+              <span className="text-on-dark">Auto Discovery</span> —{" "}
+              {autoDiscovery
+                ? "this PC will be found automatically by the coordinator via mDNS"
+                : "join cluster via mDNS"}
             </span>
           </label>
           <div className="label-caps text-[12px] text-muted mb-4">
             {autoDiscovery
-              ? "LAN address (auto-discovered)"
+              ? "This PC's LAN address (advertised via mDNS)"
               : "Share this address"}
           </div>
           <div className="font-display text-3xl md:text-4xl font-bold text-on-dark select-all break-all">
             {system.lan_ip}:50052
           </div>
           <div className="text-body text-sm font-light mt-4">
-            Port 50052 must be open in your firewall.
+            {autoDiscovery
+              ? "No need to share this address — the coordinator will discover it automatically. Just make sure port 50052 is open in your firewall."
+              : "Port 50052 must be open in your firewall."}
           </div>
         </div>
       </motion.div>
 
       <div className="bg-surface-soft border border-hairline px-5 py-4 text-sm font-light text-body mb-10">
-        <span className="text-on-dark">Steps on the other PC:</span>
-        <ol className="mt-3 space-y-2 list-decimal list-inside marker:text-muted">
-          <li>Open this dashboard on the other computer</li>
-          <li>Choose "Run the AI here (Coordinator)"</li>
-          <li>
-            Enter{" "}
-            <span className="font-display text-on-dark">{system.lan_ip}</span> as
-            the worker IP
-          </li>
-        </ol>
+        {autoDiscovery ? (
+          <>
+            <span className="text-on-dark">Steps on the other PC:</span>
+            <ol className="mt-3 space-y-2 list-decimal list-inside marker:text-muted">
+              <li>Open this dashboard on the other computer</li>
+              <li>Choose "Run the AI here (Coordinator)"</li>
+              <li>Enable "Auto Discovery" and click Connect and Start</li>
+            </ol>
+          </>
+        ) : (
+          <>
+            <span className="text-on-dark">Steps on the other PC:</span>
+            <ol className="mt-3 space-y-2 list-decimal list-inside marker:text-muted">
+              <li>Open this dashboard on the other computer</li>
+              <li>Choose "Run the AI here (Coordinator)"</li>
+              <li>
+                Enter{" "}
+                <span className="font-display text-on-dark">
+                  {system.lan_ip}
+                </span>{" "}
+                as the worker IP
+              </li>
+            </ol>
+          </>
+        )}
       </div>
 
       {error && (
