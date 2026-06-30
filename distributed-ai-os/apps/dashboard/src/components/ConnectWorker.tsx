@@ -42,7 +42,7 @@ export default function ConnectWorker({
               type="checkbox"
               checked={autoDiscovery}
               onChange={(e) => setAutoDiscovery(e.target.checked)}
-              className="w-4 h-4 accent-[#1c69d4]"
+              className="w-4 h-4 accent-m-blue-dark"
             />
             <span className="text-sm font-light text-body">
               <span className="text-on-dark">Auto Discovery</span> — join cluster
