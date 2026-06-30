@@ -315,6 +315,7 @@ export default function App() {
               <LiveStatus
                 status={status}
                 cluster={cluster}
+                system={system}
                 onStop={handleStop}
                 onRestart={handleRestart}
                 stopping={stopping}

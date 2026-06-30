@@ -1,15 +1,16 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { motion } from "motion/react";
 import TopologyGraph from "./TopologyGraph";
 import StatusPill from "./StatusPill";
 import ResourcePanel from "./ResourcePanel";
 import LiveTabBar from "./LiveTabBar";
 import ChatBot from "./ChatBot";
-import type { ClusterStatus, LauncherStatus, LiveTab } from "../types";
+import type { ClusterStatus, LauncherStatus, LiveTab, SystemInfo } from "../types";
 
 interface Props {
   status: LauncherStatus;
   cluster: ClusterStatus | null;
+  system: SystemInfo;
   onStop: () => void;
   onRestart: () => void;
   stopping: boolean;
@@ -19,6 +20,7 @@ interface Props {
 export default function LiveStatus({
   status,
   cluster,
+  system,
   onStop,
   onRestart,
   stopping,
@@ -40,6 +42,29 @@ export default function LiveStatus({
     : [{ id: "cluster" as LiveTab, label: "Cluster" }];
 
   const [activeTab, setActiveTab] = useState<LiveTab>("cluster");
+  const [copied, setCopied] = useState(false);
+
+  const apiPort = status.api_port ?? 8000;
+  const apiUrl = `http://${system.lan_ip}:${apiPort}/v1`;
+
+  const handleCopyApiUrl = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(apiUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      const el = document.createElement("textarea");
+      el.value = apiUrl;
+      el.style.position = "fixed";
+      el.style.opacity = "0";
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    }
+  }, [apiUrl]);
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -105,7 +130,11 @@ export default function LiveStatus({
             />
           )}
           {isCoordinator && (
-            <StatusPill label="OpenAI API" ok={nodeOk} detail=":8000/v1" />
+            <StatusPill
+              label="OpenAI API"
+              ok={nodeOk}
+              detail={`:${apiPort}/v1`}
+            />
           )}
           <StatusPill
             label="Uptime"
@@ -173,6 +202,34 @@ export default function LiveStatus({
         {status.last_error && (
           <div className="mb-4 bg-surface-soft border-l-2 border-m-red px-4 py-3 text-body-strong text-sm font-light">
             {status.last_error}
+          </div>
+        )}
+
+        {isCoordinator && nodeOk && (
+          <div className="mb-6 bg-surface-soft border border-hairline">
+            <div className="h-1 w-full m-stripe" aria-hidden="true" />
+            <div className="px-5 py-4">
+              <div className="label-caps text-[12px] text-muted mb-2">
+                Use in Cursor or VS Code
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <code className="font-display text-sm md:text-base text-on-dark break-all">
+                  {apiUrl}
+                </code>
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  type="button"
+                  onClick={handleCopyApiUrl}
+                  className="cursor-pointer shrink-0 px-4 min-h-[40px] label-caps text-[11px] border border-hairline text-muted hover:text-on-dark hover:border-on-dark transition-colors"
+                >
+                  {copied ? "Copied" : "Copy URL"}
+                </motion.button>
+              </div>
+              <p className="text-body text-xs font-light mt-3">
+                Paste as the OpenAI-compatible base URL. API key can be any
+                value — it is not validated locally.
+              </p>
+            </div>
           </div>
         )}
 
