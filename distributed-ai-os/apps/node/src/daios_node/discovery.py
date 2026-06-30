@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 SERVICE_TYPE = "_daios._tcp.local."
 
 try:
-    from zeroconf import ServiceInfo
+    from zeroconf import NonUniqueNameException, ServiceInfo
     from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
 
     _ZEROCONF_AVAILABLE = True
@@ -26,6 +26,7 @@ except ImportError:
     AsyncServiceBrowser = None  # type: ignore[misc, assignment]
     AsyncServiceInfo = None  # type: ignore[misc, assignment]
     ServiceInfo = None  # type: ignore[misc, assignment]
+    NonUniqueNameException = Exception  # type: ignore[misc, assignment]
 
 
 def _get_lan_ip() -> str:
@@ -163,6 +164,12 @@ class DiscoveryService:
         service_name = (
             f"{self.config.discovery.cluster_name}-{self.config.node_id}.{SERVICE_TYPE}"
         )
+        # Derive a per-node ``server`` (host A-record) name. Without this,
+        # zeroconf falls back to the machine hostname, so two nodes on the same
+        # host (e.g. a local coordinator + worker, or multiple test nodes)
+        # collide on the same A-record and the second registration raises
+        # NonUniqueNameException -- killing discovery for that node.
+        server_name = f"{self.config.discovery.cluster_name}-{self.config.node_id}.local."
         self._aiozc = AsyncZeroconf()
         info = ServiceInfo(
             SERVICE_TYPE,
@@ -170,21 +177,34 @@ class DiscoveryService:
             addresses=[socket.inet_aton(host)],
             port=api_port,
             properties=props,
+            server=server_name,
         )
-        await self._aiozc.async_register_service(info)
+
+        # Always start the browser so we can discover peers even if our own
+        # advertisement fails to register (a non-unique name must not stop us
+        # from finding the rest of the cluster).
         listener = _AsyncDaiosListener(
             self._aiozc, self._on_discovered, self.config.node_id
         )
         self._browser = AsyncServiceBrowser(
             self._aiozc.zeroconf, SERVICE_TYPE, listener=listener
         )
-        logger.info(
-            "mDNS discovery started for cluster %s on %s (api %s, rpc %s)",
-            self.config.discovery.cluster_name,
-            host,
-            api_port,
-            rpc_port,
-        )
+
+        try:
+            await self._aiozc.async_register_service(info)
+            logger.info(
+                "mDNS discovery started for cluster %s on %s (api %s, rpc %s)",
+                self.config.discovery.cluster_name,
+                host,
+                api_port,
+                rpc_port,
+            )
+        except NonUniqueNameException:
+            logger.warning(
+                "mDNS service name %s already registered (another node on this "
+                "host?); continuing in discover-only mode",
+                service_name,
+            )
 
     async def stop(self) -> None:
         if not self._running:
