@@ -43,7 +43,7 @@ class InferenceConfig(BaseModel):
     llama_server_port: int = 8080
     n_gpu_layers: int = 99
     tensor_split: str | None = None
-    context_size: int = 4096
+    context_size: int = 0  # 0 = use model native context (llama.cpp default)
     threads: int | None = None
     rpc_cache: bool = False
     extra_args: list[str] = Field(default_factory=list)

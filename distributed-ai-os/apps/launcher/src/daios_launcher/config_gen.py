@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from daios_launcher.gguf_context import infer_context_size
+
 import yaml
 from pydantic import BaseModel
 
@@ -39,6 +41,13 @@ def _venv_binary(project_root: Path, name: str) -> str:
     return str(candidate) if candidate.is_file() else name
 
 
+def _resolve_context_size(model_path: str | None, backend: str) -> int:
+    """Use the model's native context window when available (0 = llama.cpp default)."""
+    if backend != "llama.cpp" or not model_path:
+        return 0
+    return infer_context_size(model_path) or 0
+
+
 def build_node_config(
     req: StartRequest,
     node_id: str | None = None,
@@ -56,14 +65,16 @@ def build_node_config(
             )
         )
 
+    resolved_model = _resolve_model_path(req.model_path, root)
+
     inference = InferenceConfig(
         backend=req.backend,
         llama_server_bin=_venv_binary(root, "llama-server"),
         rpc_server_bin=_venv_binary(root, "ggml-rpc-server"),
-        model_path=_resolve_model_path(req.model_path, root),
+        model_path=resolved_model,
         llama_server_port=8080,
         n_gpu_layers=99,
-        context_size=2048,
+        context_size=_resolve_context_size(resolved_model, req.backend),
         threads=2,
         rpc_cache=True,
     )

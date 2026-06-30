@@ -1,5 +1,6 @@
 import type {
   ClusterStatus,
+  ChatMessage,
   LauncherStatus,
   StartRequest,
   SystemInfo,
@@ -43,13 +44,13 @@ export async function stopNode(): Promise<unknown> {
 }
 
 export async function sendChat(
-  message: string,
+  messages: ChatMessage[],
   stream: boolean,
 ): Promise<Response> {
   return fetch(`${BASE}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, max_tokens: 80, stream }),
+    body: JSON.stringify({ messages, stream }),
   });
 }
 

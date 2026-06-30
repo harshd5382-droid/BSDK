@@ -126,7 +126,7 @@ def test_launcher_chat_mock(mock_coordinator_running):
     client = mock_coordinator_running
     resp = client.post(
         "/api/launcher/chat",
-        json={"message": "hello", "max_tokens": 32, "stream": False},
+        json={"message": "hello", "stream": False},
     )
     assert resp.status_code == 200
     data = resp.json()

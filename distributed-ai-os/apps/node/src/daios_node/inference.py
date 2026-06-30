@@ -267,9 +267,9 @@ class InferenceManager:
             str(inf.llama_server_port),
             "-ngl",
             str(inf.n_gpu_layers),
-            "-c",
-            str(inf.context_size),
         ]
+        if inf.context_size > 0:
+            cmd.extend(["-c", str(inf.context_size)])
         if inf.model_path:
             cmd.extend(["-m", inf.model_path])
         if inf.threads:

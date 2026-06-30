@@ -69,3 +69,10 @@ export interface StartRequest {
 }
 
 export type WizardStep = "welcome" | "role" | "connect" | "live";
+
+export type LiveTab = "cluster" | "chat";
+
+export interface ChatMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+}

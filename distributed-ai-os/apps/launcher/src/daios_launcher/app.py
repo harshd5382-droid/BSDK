@@ -35,9 +35,15 @@ def _sanitize_start_error(error: str | None) -> str | None:
     return text or None
 
 
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
 class ChatRequest(BaseModel):
-    message: str
-    max_tokens: int = 64
+    message: str | None = None
+    messages: list[ChatMessage] | None = None
+    max_tokens: int | None = None
     stream: bool = False
 
 
@@ -223,12 +229,23 @@ class LauncherApp:
                 raise HTTPException(status_code=503, detail="Launcher not ready")
             api_port = await self._active_api_port()
 
-            body = {
+            if req.messages:
+                messages = [m.model_dump() for m in req.messages]
+            elif req.message:
+                messages = [{"role": "user", "content": req.message}]
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Provide either message or messages",
+                )
+
+            body: dict[str, object] = {
                 "model": "daios",
-                "messages": [{"role": "user", "content": req.message}],
-                "max_tokens": req.max_tokens,
+                "messages": messages,
                 "stream": req.stream,
             }
+            if req.max_tokens is not None:
+                body["max_tokens"] = req.max_tokens
             url = f"http://127.0.0.1:{api_port}/v1/chat/completions"
 
             if req.stream:
