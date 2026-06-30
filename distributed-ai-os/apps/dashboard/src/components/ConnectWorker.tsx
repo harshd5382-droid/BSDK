@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { motion } from "motion/react";
 import type { SystemInfo } from "../types";
 
