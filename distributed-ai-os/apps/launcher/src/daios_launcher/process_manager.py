@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
-import os
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+from daios_launcher import paths
 from daios_launcher.platform_utils import (
     kill_port_listeners,
     popen_kwargs,
@@ -58,12 +59,17 @@ class NodeProcess:
         log_dir.mkdir(parents=True, exist_ok=True)
         self._log_path = log_dir / f"launcher-{self.node_id}.log"
 
-        daios_node = resolve_venv_binary(project_root, "daios-node")
-        if not Path(daios_node).is_file():
-            found = os.environ.get("PATH", "")
-            import shutil
+        # Frozen (PyInstaller) production build has no venv: re-invoke this exe with
+        # the hidden --run-node subcommand, which dispatches to the node daemon.
+        if paths.is_frozen():
+            node_cmd = [sys.executable, "--run-node", "-c", str(self.config_path)]
+        else:
+            daios_node = resolve_venv_binary(project_root, "daios-node")
+            if not Path(daios_node).is_file():
+                import shutil
 
-            daios_node = shutil.which("daios-node", path=str(venv_bin)) or daios_node
+                daios_node = shutil.which("daios-node", path=str(venv_bin)) or daios_node
+            node_cmd = [daios_node, "-c", str(self.config_path)]
 
         env = {
             **spawn_env(venv_bin),
@@ -73,7 +79,7 @@ class NodeProcess:
         try:
             self._log_handle = open(self._log_path, "wb")
             self.process = subprocess.Popen(
-                [daios_node, "-c", str(self.config_path)],
+                node_cmd,
                 cwd=str(project_root),
                 env=env,
                 stdout=self._log_handle,

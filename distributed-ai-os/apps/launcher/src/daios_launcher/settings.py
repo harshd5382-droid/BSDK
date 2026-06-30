@@ -7,7 +7,7 @@ import secrets
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, Field
+from pydantic import BaseModel, Field
 
 SETTINGS_PATH = Path.home() / ".daios" / "launcher.json"
 

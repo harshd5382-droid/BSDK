@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -30,7 +31,6 @@ from daios_launcher.models_manager import (
     download_state,
     list_models,
 )
-from daios_launcher.platform_utils import resolve_venv_binary
 from daios_launcher.process_manager import LauncherState, ProcessManager, default_venv_bin
 from daios_launcher.security import LauncherTokenMiddleware
 from daios_launcher.settings import LauncherSettings
@@ -128,10 +128,29 @@ class LauncherApp:
             await self._http.aclose()
 
     async def _autostart_worker(self) -> None:
-        backend = "llama.cpp"
-        rpc_bin = resolve_venv_binary(self.project_root, "ggml-rpc-server")
+        from daios_launcher import paths
+        from daios_launcher.config_gen import _runtime_binary
+
+        rpc_bin = _runtime_binary(self.project_root, "ggml-rpc-server")
         if not Path(rpc_bin).is_file():
+            if paths.is_frozen() or os.environ.get("DAIOS_REQUIRE_REAL_BACKEND") == "1":
+                # Production: never silently mock. The installer is responsible for
+                # materializing a verified ggml-rpc-server.exe before the service runs.
+                logger.error(
+                    "Real worker binary missing at %s — refusing to start. The mock "
+                    "backend is not a substitute. Re-run the installer to download and "
+                    "verify ggml-rpc-server.exe.",
+                    rpc_bin,
+                )
+                return
+            logger.warning(
+                "ggml-rpc-server not found at %s; starting MOCK worker (dev only — "
+                "this is NOT a real worker).",
+                rpc_bin,
+            )
             backend = "mock"
+        else:
+            backend = "llama.cpp"
         req = StartRequest(
             role=NodeRole.WORKER,
             backend=backend,

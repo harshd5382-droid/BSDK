@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -132,7 +131,6 @@ def reexec_launcher(install_dir: Path, extra_args: list[str]) -> None:
     if not venv_python:
         logger.error("Cannot re-exec: venv python missing")
         return
-    launcher = install_dir / "apps" / "launcher"
     env = {**os.environ, "DAIOS_ROOT": str(install_dir)}
     os.chdir(install_dir)
     os.execve(

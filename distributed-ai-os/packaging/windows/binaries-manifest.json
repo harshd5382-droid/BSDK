@@ -1,0 +1,7 @@
+{
+  "_comment": "Release manifest for the native GGML RPC worker binaries. At release time, build ggml-rpc-server.exe (+ GGML DLLs) with scripts/windows/build-llama-cpp.ps1, zip them, upload the zip, then set archive_url and archive_sha256 below. Until archive_sha256 is replaced, the installer will NOT download (it refuses unverifiable binaries) and instead requires bundled binaries at build time.",
+  "archive_url": "https://github.com/ciright/BSDK/releases/latest/download/ggml-rpc-server-win-x64.zip",
+  "archive_sha256": "REPLACE_WITH_RELEASE_SHA256",
+  "required_files": ["ggml-rpc-server.exe"],
+  "rpc_server": "ggml-rpc-server.exe"
+}

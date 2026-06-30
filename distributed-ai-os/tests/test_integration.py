@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 import httpx
+import psutil
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,12 +16,21 @@ COORD_CONFIG = ROOT / "examples" / "two-node" / "coordinator-mock.yaml"
 
 
 def _free_ports(*ports: int) -> None:
-    for port in ports:
-        subprocess.run(
-            ["fuser", "-k", f"{port}/tcp"],
-            capture_output=True,
-            check=False,
-        )
+    """Terminate any process listening on the given TCP ports (cross-platform).
+
+    Replaces the Linux-only ``fuser`` so the suite runs on Windows too.
+    """
+    targets = set(ports)
+    try:
+        conns = psutil.net_connections(kind="inet")
+    except (psutil.AccessDenied, psutil.Error):
+        return
+    for conn in conns:
+        if conn.laddr and conn.laddr.port in targets and conn.pid:
+            try:
+                psutil.Process(conn.pid).terminate()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
 
 
 def _wait_for_health(url: str, expected_node_id: str, timeout: float = 10.0) -> None:

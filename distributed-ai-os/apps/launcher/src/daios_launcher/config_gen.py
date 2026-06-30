@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from daios_launcher.gguf_context import infer_context_size
@@ -53,7 +54,18 @@ def _resolve_model_path(model_path: str | None, project_root: Path) -> str | Non
     return str(path)
 
 
-def _venv_binary(project_root: Path, name: str) -> str:
+def _runtime_binary(project_root: Path, name: str) -> str:
+    """Resolve a worker binary (llama-server / ggml-rpc-server).
+
+    Frozen production builds materialize native binaries under
+    ``%LOCALAPPDATA%\\BSDK\\bin``; dev builds resolve them from the project venv.
+    """
+    from daios_launcher import paths
+
+    if paths.is_frozen():
+        exe = name + (".exe" if sys.platform == "win32" else "")
+        return str(paths.bin_dir() / exe)
+
     from daios_launcher.platform_utils import resolve_venv_binary
 
     return resolve_venv_binary(project_root, name)
@@ -119,8 +131,8 @@ def build_node_config(
 
     inference = InferenceConfig(
         backend=req.backend,
-        llama_server_bin=_venv_binary(root, "llama-server"),
-        rpc_server_bin=_venv_binary(root, "ggml-rpc-server"),
+        llama_server_bin=_runtime_binary(root, "llama-server"),
+        rpc_server_bin=_runtime_binary(root, "ggml-rpc-server"),
         model_path=resolved_model,
         llama_server_port=8080,
         n_gpu_layers=_resolve_gpu_layers(req.backend),
