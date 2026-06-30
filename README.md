@@ -1,4 +1,4 @@
-# BSDK — Peer-to-Peer Distributed AI Operating System
+# BSDK — Beyond Single Device Kernel
 
 Generation 1 prototype implementation lives in [`distributed-ai-os/`](distributed-ai-os/).
 
