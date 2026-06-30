@@ -13,10 +13,12 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
 from daios_protocol.config import NodeConfig
-from daios_protocol.health import ClusterStatus, NodeHealth, ProcessState, ResourceUsage
+from daios_protocol.health import ClusterStatus, ModelUsage, NodeHealth, ProcessState, ResourceUsage
 
 from daios_node.inference import InferenceManager
+from daios_node.inference_tracker import InferenceTracker
 from daios_node.mock_backend import router as mock_router
+from daios_node.model_usage import gather_model_usage
 from daios_node.peers import check_all_peers, count_inbound_rpc_clients
 
 logger = logging.getLogger(__name__)
@@ -43,7 +45,21 @@ class NodeApp:
     def __init__(self, config: NodeConfig) -> None:
         self.config = config
         self.inference = InferenceManager(config)
+        self.inference_tracker = InferenceTracker()
         self._http_client: httpx.AsyncClient | None = None
+
+    def _local_model_usage(self) -> ModelUsage:
+        inbound = (
+            count_inbound_rpc_clients(self.config.network.rpc_port)
+            if self.config.runs_rpc_server
+            else 0
+        )
+        return gather_model_usage(
+            self.config,
+            self.inference.status(),
+            self.inference_tracker.active,
+            inbound,
+        )
 
     @asynccontextmanager
     async def lifespan(self, app: FastAPI) -> AsyncIterator[None]:
@@ -68,6 +84,7 @@ class NodeApp:
             description="Generation 1 peer node with llama.cpp / GGML RPC integration",
             lifespan=self.lifespan,
         )
+        app.state.inference_tracker = self.inference_tracker
 
         @app.get("/health")
         async def health() -> NodeHealth:
@@ -77,6 +94,7 @@ class NodeApp:
                 inference=self.inference.status(),
                 uptime_seconds=self.inference.uptime_seconds(),
                 resources=gather_resources(),
+                model_usage=self._local_model_usage(),
             )
 
         @app.get("/metrics")
@@ -109,6 +127,7 @@ class NodeApp:
                 rpc_endpoints=self.config.rpc_endpoints(),
                 inbound_rpc_clients=inbound,
                 local_resources=gather_resources(),
+                local_model_usage=self._local_model_usage(),
             )
 
         if self.config.inference.backend == "mock":
@@ -142,28 +161,33 @@ class NodeApp:
                 if k.lower() not in {"host", "content-length"}
             }
 
-            if self._wants_stream(request, body):
-                return await self._proxy_stream(url, headers, body)
-
+            self.inference_tracker.begin()
             try:
-                response = await self._http_client.request(
-                    request.method,
-                    url,
-                    headers=headers,
-                    content=body,
-                )
-            except httpx.ConnectError as exc:
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"llama-server unavailable on port {self.config.inference.llama_server_port}: {exc}",
-                ) from exc
+                if self._wants_stream(request, body):
+                    return await self._proxy_stream(url, headers, body)
 
-            return Response(
-                content=response.content,
-                status_code=response.status_code,
-                headers=dict(response.headers),
-                media_type=response.headers.get("content-type"),
-            )
+                try:
+                    response = await self._http_client.request(
+                        request.method,
+                        url,
+                        headers=headers,
+                        content=body,
+                    )
+                except httpx.ConnectError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail=f"llama-server unavailable on port {self.config.inference.llama_server_port}: {exc}",
+                    ) from exc
+
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    headers=dict(response.headers),
+                    media_type=response.headers.get("content-type"),
+                )
+            finally:
+                if not self._wants_stream(request, body):
+                    self.inference_tracker.end()
 
     @staticmethod
     def _wants_stream(request: Request, body: bytes) -> bool:
@@ -205,5 +229,7 @@ class NodeApp:
                     {"error": {"message": f"llama-server unavailable: {exc}", "type": "inference_error"}}
                 )
                 yield f"data: {msg}\n\n".encode()
+            finally:
+                self.inference_tracker.end()
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")

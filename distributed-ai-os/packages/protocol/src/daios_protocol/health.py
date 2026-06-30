@@ -25,6 +25,15 @@ class ResourceUsage(BaseModel):
     ram_percent: float | None = None
 
 
+class ModelUsage(BaseModel):
+    """AI model load / activity for a single node."""
+
+    status: str = "offline"  # offline | idle | active
+    usage_percent: float | None = None
+    detail: str | None = None
+    model_name: str | None = None
+
+
 class PeerStatus(BaseModel):
     id: str
     host: str
@@ -33,6 +42,7 @@ class PeerStatus(BaseModel):
     latency_ms: float | None = None
     error: str | None = None
     resources: ResourceUsage | None = None
+    model_usage: ModelUsage | None = None
 
 
 class InferenceStatus(BaseModel):
@@ -51,6 +61,7 @@ class NodeHealth(BaseModel):
     inference: InferenceStatus
     uptime_seconds: float = 0.0
     resources: ResourceUsage | None = None
+    model_usage: ModelUsage | None = None
 
 
 class ClusterStatus(BaseModel):
@@ -62,3 +73,4 @@ class ClusterStatus(BaseModel):
     inbound_rpc_clients: int = 0
     generation: int = 1
     local_resources: ResourceUsage | None = None
+    local_model_usage: ModelUsage | None = None

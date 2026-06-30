@@ -65,7 +65,7 @@ export default function ChatTest() {
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-fabric-900 rounded-lg p-3 text-sm text-fabric-600 leading-relaxed"
+          className="bg-fabric-900 rounded-lg p-3 text-sm text-white/90 leading-relaxed"
         >
           {response}
         </motion.div>

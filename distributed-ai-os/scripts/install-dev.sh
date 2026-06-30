@@ -7,9 +7,11 @@ VENV="${ROOT}/.venv"
 
 if command -v uv >/dev/null 2>&1; then
   uv venv "${VENV}" 2>/dev/null || true
-  uv pip install --python "${VENV}/bin/python" -e "${ROOT}/packages/protocol"
   uv pip install --python "${VENV}/bin/python" -e "${ROOT}/apps/node"
   uv pip install --python "${VENV}/bin/python" -e "${ROOT}/apps/launcher"
+  # Reinstall protocol last: uv downgrades path deps to non-editable wheels
+  # when installing node/launcher, which leaves stale copies in site-packages.
+  uv pip install --python "${VENV}/bin/python" -e "${ROOT}/packages/protocol"
   uv pip install --python "${VENV}/bin/python" pytest pytest-asyncio httpx ruff hatchling
 else
   if [[ ! -d "${VENV}" ]]; then
@@ -18,9 +20,9 @@ else
   # shellcheck disable=SC1091
   source "${VENV}/bin/activate"
   pip install -U pip hatchling
-  pip install -e "${ROOT}/packages/protocol"
   pip install -e "${ROOT}/apps/node"
   pip install -e "${ROOT}/apps/launcher"
+  pip install -e "${ROOT}/packages/protocol"
   pip install pytest pytest-asyncio httpx ruff
 fi
 

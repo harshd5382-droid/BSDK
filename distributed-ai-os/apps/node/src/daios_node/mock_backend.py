@@ -7,10 +7,30 @@ import time
 import uuid
 from typing import Any
 
+from contextlib import asynccontextmanager
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from daios_node.inference_tracker import InferenceTracker
+
 router = APIRouter(prefix="/v1", tags=["mock-inference"])
+
+
+def _tracker(request: Request) -> InferenceTracker | None:
+    return getattr(request.app.state, "inference_tracker", None)
+
+
+@asynccontextmanager
+async def _track_inference(request: Request):
+    tracker = _tracker(request)
+    if tracker:
+        tracker.begin()
+    try:
+        yield
+    finally:
+        if tracker:
+            tracker.end()
 
 
 def _mock_models() -> dict[str, Any]:
@@ -69,37 +89,40 @@ async def chat_completions(request: Request):
     body = await request.json()
     if body.get("stream"):
         async def stream():
-            chunk = {
-                "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
-                "object": "chat.completion.chunk",
-                "created": int(time.time()),
-                "model": body.get("model", "daios-mock-7b"),
-                "choices": [
-                    {
-                        "index": 0,
-                        "delta": {"role": "assistant", "content": "[DAIOS mock stream] "},
-                        "finish_reason": None,
-                    }
-                ],
-            }
-            yield f"data: {json.dumps(chunk)}\n\n"
-            yield "data: [DONE]\n\n"
+            async with _track_inference(request):
+                chunk = {
+                    "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": body.get("model", "daios-mock-7b"),
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"role": "assistant", "content": "[DAIOS mock stream] "},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+                yield f"data: {json.dumps(chunk)}\n\n"
+                yield "data: [DONE]\n\n"
 
         return StreamingResponse(stream(), media_type="text/event-stream")
 
-    return JSONResponse(_mock_completion(body))
+    async with _track_inference(request):
+        return JSONResponse(_mock_completion(body))
 
 
 @router.post("/completions")
 async def completions(request: Request) -> JSONResponse:
     body = await request.json()
-    result = _mock_completion(body)
-    result["object"] = "text_completion"
-    result["choices"] = [
-        {
-            "index": 0,
-            "text": result["choices"][0]["message"]["content"],
-            "finish_reason": "stop",
-        }
-    ]
-    return JSONResponse(result)
+    async with _track_inference(request):
+        result = _mock_completion(body)
+        result["object"] = "text_completion"
+        result["choices"] = [
+            {
+                "index": 0,
+                "text": result["choices"][0]["message"]["content"],
+                "finish_reason": "stop",
+            }
+        ]
+        return JSONResponse(result)

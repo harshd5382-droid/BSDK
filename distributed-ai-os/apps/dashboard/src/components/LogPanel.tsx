@@ -17,10 +17,10 @@ export default function LogPanel({ lines, bottomRef }: Props) {
           last {VISIBLE_LINES} lines
         </span>
       </div>
-      <div className="h-40 overflow-y-auto p-3 font-display text-xs leading-relaxed text-fabric-600">
+      <div className="h-40 overflow-y-auto p-3 font-display text-xs leading-relaxed text-white/90">
         <AnimatePresence initial={false}>
           {visible.length === 0 ? (
-            <div className="text-fabric-700">Waiting for output…</div>
+            <div className="text-white/50">Waiting for output…</div>
           ) : (
             visible.map((line, i) => (
               <motion.div

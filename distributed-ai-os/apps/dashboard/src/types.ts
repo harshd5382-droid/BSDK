@@ -26,6 +26,13 @@ export interface ResourceUsage {
   ram_percent: number | null;
 }
 
+export interface ModelUsage {
+  status: "offline" | "idle" | "active" | string;
+  usage_percent: number | null;
+  detail: string | null;
+  model_name: string | null;
+}
+
 export interface PeerStatus {
   id: string;
   host: string;
@@ -34,6 +41,7 @@ export interface PeerStatus {
   latency_ms: number | null;
   error: string | null;
   resources: ResourceUsage | null;
+  model_usage: ModelUsage | null;
 }
 
 export interface ClusterStatus {
@@ -43,6 +51,7 @@ export interface ClusterStatus {
   inbound_rpc_clients: number;
   generation: number;
   local_resources: ResourceUsage | null;
+  local_model_usage: ModelUsage | null;
 }
 
 export type NodeRole = "coordinator" | "worker" | "hybrid";
