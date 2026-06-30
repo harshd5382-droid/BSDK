@@ -58,6 +58,74 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/*
+ * Machined technical "blueprint" grid — fixed behind all content.
+ * Two layered line sets: a fine 28px lattice + a heavier 112px section grid,
+ * tinted with a faint M-blue cast so the surface reads like engineering
+ * drafting paper rather than a flat checkerboard.
+ * A radial mask keeps the center crisp and fades the edges into the canvas.
+ */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    /* Heavy section grid — BMW M blue verticals + M red horizontals. */
+    linear-gradient(to right, rgba(28, 105, 212, 0.22) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(226, 39, 24, 0.18) 1px, transparent 1px),
+    /* Fine lattice — cool M-blue, more present than before. */
+    linear-gradient(to right, rgba(28, 105, 212, 0.1) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(28, 105, 212, 0.1) 1px, transparent 1px);
+  background-size:
+    112px 112px,
+    112px 112px,
+    28px 28px,
+    28px 28px;
+  -webkit-mask-image: radial-gradient(
+    ellipse 90% 75% at 50% 38%,
+    #000 0%,
+    rgba(0, 0, 0, 0.55) 55%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    ellipse 90% 75% at 50% 38%,
+    #000 0%,
+    rgba(0, 0, 0, 0.55) 55%,
+    transparent 100%
+  );
+}
+
+/*
+ * Ambient blueprint glow — a soft cool-blue bloom anchored top-center,
+ * sitting above the grid lines to give the canvas atmosphere and depth.
+ */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse 70% 50% at 50% 0%,
+      rgba(28, 105, 212, 0.1) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse 100% 80% at 50% 120%,
+      rgba(6, 83, 182, 0.08) 0%,
+      transparent 55%
+    );
+}
+
+/* Keep app chrome and content above the grid layer. */
+#root {
+  position: relative;
+  z-index: 1;
+}
+
 .font-display {
   font-family: var(--font-display);
 }

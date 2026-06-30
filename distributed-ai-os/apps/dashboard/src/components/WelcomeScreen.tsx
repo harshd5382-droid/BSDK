@@ -26,7 +26,12 @@ export default function WelcomeScreen({ system, onNext }: Props) {
         className="flex items-center gap-3 mb-6"
       >
         <span className="h-4 w-1.5 m-stripe" aria-hidden="true" />
-        <span className="label-caps text-on-dark">Generation 1</span>
+        <div className="flex flex-col gap-1">
+          <span className="label-caps text-on-dark">BSDK</span>
+          <span className="text-[11px] uppercase tracking-[0.18em] text-muted">
+            Beyond Single Device Kernel
+          </span>
+        </div>
       </motion.div>
 
       <motion.h1

@@ -173,7 +173,7 @@ export default function App() {
 
   if (!system) {
     return (
-      <div className="min-h-screen bg-canvas flex flex-col items-center justify-center gap-4">
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4">
         <div className="h-1 w-24 m-stripe" />
         <div className="label-caps text-muted animate-pulse">Loading</div>
       </div>
@@ -184,14 +184,19 @@ export default function App() {
   const logCount = Math.min(lines.length, 20);
 
   return (
-    <div className="min-h-screen bg-canvas">
+    <div className="min-h-screen">
       <div className="h-1 w-full m-stripe" aria-hidden="true" />
       <header className="relative z-50 h-16 border-b border-hairline px-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="h-6 w-1.5 m-stripe" aria-hidden="true" />
-          <span className="display text-lg leading-none">DAIOS</span>
-          <span className="hidden sm:inline text-[11px] uppercase tracking-[0.2em] text-muted font-display">
-            Distributed AI OS
+          <span
+            className="display text-lg leading-none"
+            title="Beyond Single Device Kernel"
+          >
+            BSDK
+          </span>
+          <span className="hidden md:inline text-[10px] uppercase tracking-[0.18em] text-muted font-display max-w-56 leading-tight">
+            Beyond Single Device Kernel
           </span>
         </div>
         <div className="flex items-center gap-4">
