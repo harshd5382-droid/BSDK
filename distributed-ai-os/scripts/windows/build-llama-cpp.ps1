@@ -22,7 +22,8 @@ cmake -S $SrcDir -B $BuildDir `
 
 cmake --build $BuildDir --config Release --target ggml-rpc-server llama-server -j
 
-$binDir = Join-Path $BuildDir "bin" "Release"
+# Join-Path on Windows PowerShell 5.1 accepts only two arguments; nest for bin/Release.
+$binDir = Join-Path (Join-Path $BuildDir "bin") "Release"
 if (-not (Test-Path $binDir)) {
     $binDir = Join-Path $BuildDir "bin"
 }
