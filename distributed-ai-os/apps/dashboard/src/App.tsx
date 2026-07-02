@@ -161,7 +161,10 @@ export default function App() {
   if (!system) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4">
-        <div className="h-1 w-24 m-stripe" />
+        <span className="relative flex h-3 w-3">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full m-stripe opacity-60" />
+          <span className="relative inline-flex h-3 w-3 rounded-full m-stripe" />
+        </span>
         <div className="label-caps text-muted animate-pulse">Loading</div>
       </div>
     );
@@ -169,21 +172,21 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
-      <div className="h-1 w-full m-stripe" aria-hidden="true" />
-      <header className="relative z-50 h-16 border-b border-hairline px-6 flex items-center justify-between">
+      <div className="hidden" aria-hidden="true" />
+      <header className="sticky top-0 z-50 h-16 px-6 flex items-center justify-between bg-canvas/60 backdrop-blur-xl border-b border-hairline">
         <div className="flex items-center gap-3">
-          <span className="h-6 w-1.5 m-stripe" aria-hidden="true" />
+          <span className="relative inline-flex h-2.5 w-2.5 rounded-full m-stripe" aria-hidden="true" />
           <span
             className="display text-lg leading-none"
             title="Beyond Single Device Kernel"
           >
             BSDK
           </span>
-          <span className="hidden md:inline text-[10px] uppercase tracking-[0.18em] text-on-dark font-display max-w-56 leading-tight">
+          <span className="hidden md:inline text-[11px] tracking-[0.06em] text-muted font-body max-w-56 leading-tight">
             Beyond Single Device Kernel
           </span>
         </div>
-        <div className="text-xs text-on-dark font-display tracking-wide">
+        <div className="text-xs text-body-strong font-display tracking-wide px-3 py-1.5 rounded-full bg-surface-card border border-hairline">
           {system.lan_ip}
         </div>
       </header>

@@ -38,7 +38,7 @@ export default function ConnectCoordinator({
   return (
     <div className="max-w-xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
-        <span className="h-4 w-1.5 m-stripe" aria-hidden="true" />
+        <span className="relative inline-flex h-2.5 w-2.5 rounded-full m-stripe" aria-hidden="true" />
         <span className="label-caps text-muted">Coordinator · Setup</span>
       </div>
 
@@ -48,12 +48,12 @@ export default function ConnectCoordinator({
       </p>
 
       <div className="space-y-6 mb-10">
-        <label className="flex items-center gap-3 cursor-pointer bg-surface-soft border border-hairline px-4 py-3">
+        <label className="flex items-center gap-3 cursor-pointer bg-surface-soft border border-hairline rounded-xl px-4 py-3 backdrop-blur-xl">
           <input
             type="checkbox"
             checked={autoDiscovery}
             onChange={(e) => setAutoDiscovery(e.target.checked)}
-            className="w-4 h-4 accent-m-blue-dark"
+            className="w-4 h-4 accent-m-blue-dark rounded"
           />
           <span className="text-sm font-light text-body">
             <span className="text-on-dark">Auto Discovery</span> — find workers
@@ -68,7 +68,7 @@ export default function ConnectCoordinator({
             placeholder="e.g. 192.168.1.42"
             value={peerHost}
             onChange={(e) => setPeerHost(e.target.value)}
-            className="w-full bg-surface-card border border-hairline px-4 h-12 font-display text-sm text-on-dark placeholder:text-muted focus:outline-none focus:border-on-dark transition-colors"
+            className="w-full bg-surface-card border border-hairline rounded-xl px-4 h-12 font-display text-sm text-on-dark placeholder:text-muted focus:outline-none focus:border-hairline-strong backdrop-blur-xl transition-colors"
           />
         </Field>
         )}
@@ -78,7 +78,7 @@ export default function ConnectCoordinator({
             <select
               value={modelPath}
               onChange={(e) => setModelPath(e.target.value)}
-              className="w-full bg-surface-card border border-hairline px-4 h-12 font-display text-sm text-on-dark focus:outline-none focus:border-on-dark cursor-pointer transition-colors"
+              className="w-full bg-surface-card border border-hairline rounded-xl px-4 h-12 font-display text-sm text-on-dark focus:outline-none focus:border-hairline-strong cursor-pointer backdrop-blur-xl transition-colors"
             >
               {system.models.map((m) => (
                 <option key={m} value={`models/${m}`}>
@@ -88,14 +88,14 @@ export default function ConnectCoordinator({
             </select>
           </Field>
         ) : (
-          <div className="bg-surface-soft border-l-2 border-warning px-4 py-3 text-sm font-light text-body">
+          <div className="bg-surface-soft border-l-2 border-warning rounded-xl px-4 py-3 text-sm font-light text-body backdrop-blur-xl">
             No GGUF models found in{" "}
             <code className="font-display text-on-dark">models/</code>. Mock mode
             will be used for testing.
           </div>
         )}
 
-        <div className="bg-surface-soft border border-hairline px-4 py-3 text-sm font-light text-body">
+        <div className="bg-surface-soft border border-hairline rounded-xl px-4 py-3 text-sm font-light text-body backdrop-blur-xl">
           This PC is the <span className="text-on-dark">Coordinator</span> — its
           address is{" "}
           <span className="font-display text-on-dark">{system.lan_ip}</span>.
@@ -104,7 +104,7 @@ export default function ConnectCoordinator({
         </div>
 
         {peerIsSelf && (
-          <div className="bg-surface-soft border-l-2 border-warning px-4 py-3 text-sm font-light text-body">
+          <div className="bg-surface-soft border-l-2 border-warning rounded-xl px-4 py-3 text-sm font-light text-body backdrop-blur-xl">
             That IP is this computer. Run as{" "}
             <span className="text-on-dark">Worker</span> here instead, and
             Coordinator on the other PC.
@@ -116,7 +116,7 @@ export default function ConnectCoordinator({
         <motion.div
           initial={{ opacity: 0, x: -8 }}
           animate={{ opacity: 1, x: 0 }}
-          className="mb-6 bg-surface-soft border-l-2 border-m-red px-4 py-3 text-sm font-light text-body-strong"
+          className="mb-6 bg-surface-soft border-l-2 border-m-red rounded-xl px-4 py-3 text-sm font-light text-body-strong backdrop-blur-xl"
         >
           {error}
         </motion.div>

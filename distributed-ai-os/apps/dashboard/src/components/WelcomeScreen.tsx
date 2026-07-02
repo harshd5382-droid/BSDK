@@ -25,10 +25,10 @@ export default function WelcomeScreen({ system, onNext }: Props) {
         animate="visible"
         className="flex items-center gap-3 mb-6"
       >
-        <span className="h-4 w-1.5 m-stripe" aria-hidden="true" />
+        <span className="relative inline-flex h-2.5 w-2.5 rounded-full m-stripe" aria-hidden="true" />
         <div className="flex flex-col gap-1">
-          <span className="label-caps text-on-dark">BSDK</span>
-          <span className="text-[11px] uppercase tracking-[0.18em] text-muted">
+          <span className="label-caps text-body-strong">BSDK</span>
+          <span className="text-[11px] tracking-[0.04em] text-muted">
             Beyond Single Device Kernel
           </span>
         </div>
@@ -62,7 +62,7 @@ export default function WelcomeScreen({ system, onNext }: Props) {
         variants={fadeUp}
         initial="hidden"
         animate="visible"
-        className="grid grid-cols-2 md:grid-cols-4 gap-px bg-hairline border border-hairline mb-12"
+        className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-12"
       >
         <Spec label="Hostname" value={system.hostname} />
         <Spec label="LAN IP" value={system.lan_ip} />
@@ -79,6 +79,7 @@ export default function WelcomeScreen({ system, onNext }: Props) {
         initial="hidden"
         animate="visible"
         whileTap={{ scale: 0.98 }}
+        whileHover={{ scale: 1.02 }}
         onClick={onNext}
         className="btn-m"
       >
@@ -93,11 +94,11 @@ export default function WelcomeScreen({ system, onNext }: Props) {
 
 function Spec({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-surface-soft px-5 py-6">
-      <div className="font-display text-2xl font-bold leading-none truncate text-on-dark">
+    <div className="bg-surface-soft border border-hairline rounded-2xl px-5 py-6 backdrop-blur-xl">
+      <div className="font-display text-2xl font-semibold leading-none truncate text-on-dark">
         {value}
       </div>
-      <div className="label-caps text-[12px] text-muted mt-3">{label}</div>
+      <div className="label-caps text-[11px] text-muted mt-3">{label}</div>
     </div>
   );
 }

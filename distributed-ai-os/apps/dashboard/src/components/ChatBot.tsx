@@ -146,11 +146,11 @@ export default function ChatBot() {
   }
 
   return (
-    <div className="flex flex-col h-[min(72dvh,640px)] bg-surface-soft border border-hairline overflow-hidden">
-      <div className="h-1 w-full m-stripe" aria-hidden="true" />
+    <div className="flex flex-col h-[min(72dvh,640px)] bg-surface-soft border border-hairline rounded-2xl backdrop-blur-xl overflow-hidden">
+      <div className="h-1 w-full m-stripe opacity-70" aria-hidden="true" />
       <div className="flex items-center justify-between px-4 py-3 border-b border-hairline">
         <div>
-          <h3 className="label-caps text-[13px] text-on-dark">AI Chat</h3>
+          <h3 className="label-caps text-[13px] text-body-strong">AI Chat</h3>
           <p className="text-xs text-muted font-light mt-1">
             Full model context — prompt and reply share the model window
           </p>
@@ -161,7 +161,7 @@ export default function ChatBot() {
             type="button"
             onClick={handleClear}
             disabled={loading}
-            className="cursor-pointer px-4 min-h-[44px] label-caps text-[11px] border border-hairline text-muted hover:text-on-dark hover:border-on-dark disabled:opacity-40 transition-colors"
+            className="cursor-pointer px-4 min-h-[44px] rounded-full label-caps text-[11px] border border-hairline text-muted hover:text-on-dark hover:border-hairline-strong disabled:opacity-40 transition-colors"
           >
             Clear
           </motion.button>
@@ -199,8 +199,8 @@ export default function ChatBot() {
               <div
                 className={`max-w-[85%] px-3 py-2 text-sm font-light leading-relaxed ${
                   msg.role === "user"
-                    ? "bg-surface-card border-l-2 border-m-blue-dark text-on-dark"
-                    : "bg-surface-card border border-hairline text-body-strong"
+                    ? "bg-surface-card border border-hairline-strong text-on-dark rounded-2xl rounded-br-md"
+                    : "bg-surface-card border border-hairline text-body-strong rounded-2xl rounded-bl-md"
                 }`}
               >
                 {msg.content || (
@@ -216,7 +216,7 @@ export default function ChatBot() {
             role="alert"
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-surface-card border-l-2 border-m-red px-3 py-2 text-body-strong text-sm font-light"
+            className="bg-surface-card border-l-2 border-m-red rounded-xl px-3 py-2 text-body-strong text-sm font-light"
           >
             {error}
           </motion.div>
@@ -237,7 +237,7 @@ export default function ChatBot() {
             disabled={loading}
             rows={2}
             placeholder="Type a message…"
-            className="flex-1 resize-none bg-surface-card border border-hairline px-3 py-2.5 text-sm font-light leading-relaxed text-on-dark placeholder:text-muted focus:outline-none focus:border-on-dark disabled:opacity-50 min-h-[44px] transition-colors"
+            className="flex-1 resize-none bg-surface-card border border-hairline rounded-xl px-3 py-2.5 text-sm font-light leading-relaxed text-on-dark placeholder:text-muted focus:outline-none focus:border-hairline-strong disabled:opacity-50 min-h-[44px] backdrop-blur-xl transition-colors"
           />
           <motion.button
             whileTap={{ scale: 0.97 }}

@@ -10,10 +10,10 @@ const VISIBLE_LINES = 20;
 export default function LogPanel({ lines, bottomRef }: Props) {
   const visible = lines.slice(-VISIBLE_LINES);
   return (
-    <div className="bg-surface-soft border border-hairline overflow-hidden">
-      <div className="h-1 w-full m-stripe" aria-hidden="true" />
+    <div className="bg-surface-soft border border-hairline rounded-2xl backdrop-blur-xl overflow-hidden">
+      <div className="h-1 w-full m-stripe opacity-70" aria-hidden="true" />
       <div className="px-4 py-2.5 border-b border-hairline flex items-center justify-between">
-        <span className="label-caps text-[12px] text-on-dark">Recent Log</span>
+        <span className="label-caps text-[12px] text-body-strong">Recent Log</span>
         <span className="font-display text-xs font-light text-muted">
           last {VISIBLE_LINES} lines
         </span>

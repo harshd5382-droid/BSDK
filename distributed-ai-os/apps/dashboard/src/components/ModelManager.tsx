@@ -112,8 +112,8 @@ export default function ModelManager() {
   };
 
   return (
-    <div className="bg-surface-soft border border-hairline">
-      <div className="h-1 w-full m-stripe" aria-hidden="true" />
+    <div className="bg-surface-soft border border-hairline rounded-2xl backdrop-blur-xl overflow-hidden">
+      <div className="h-1 w-full m-stripe opacity-70" aria-hidden="true" />
       <div className="px-5 py-4">
         <div className="label-caps text-[12px] text-muted mb-3">Model Manager</div>
 
@@ -123,14 +123,14 @@ export default function ModelManager() {
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="Direct GGUF URL (https://huggingface.co/.../resolve/main/model.gguf)"
-            className="w-full bg-surface border border-hairline px-3 py-2 text-sm font-light text-on-dark"
+            className="w-full bg-surface-card border border-hairline rounded-xl px-3 py-2 text-sm font-light text-on-dark focus:outline-none focus:border-hairline-strong backdrop-blur-xl transition-colors"
           />
           <input
             type="text"
             value={hfRepo}
             onChange={(e) => setHfRepo(e.target.value)}
             placeholder="HuggingFace: org/model:filename.gguf"
-            className="w-full bg-surface border border-hairline px-3 py-2 text-sm font-light text-on-dark"
+            className="w-full bg-surface-card border border-hairline rounded-xl px-3 py-2 text-sm font-light text-on-dark focus:outline-none focus:border-hairline-strong backdrop-blur-xl transition-colors"
           />
           <motion.button
             whileTap={{ scale: 0.98 }}
@@ -149,7 +149,7 @@ export default function ModelManager() {
         </div>
 
         {error && (
-          <div className="mb-3 text-sm text-m-red border-l-2 border-m-red pl-3">
+          <div className="mb-3 text-sm text-m-red border-l-2 border-m-red rounded-lg pl-3 py-1">
             {error}
           </div>
         )}
@@ -161,7 +161,7 @@ export default function ModelManager() {
           {models.map((m) => (
             <li
               key={m.name}
-              className="flex flex-wrap items-center justify-between gap-2 border border-hairline px-3 py-2"
+              className="flex flex-wrap items-center justify-between gap-2 border border-hairline rounded-xl px-3 py-2 bg-surface-card/40"
             >
               <div>
                 <span className="font-display text-sm text-on-dark">{m.name}</span>
@@ -177,7 +177,7 @@ export default function ModelManager() {
                   <button
                     type="button"
                     onClick={() => handleSelect(m.name)}
-                    className="cursor-pointer label-caps text-[10px] border border-hairline px-2 py-1 hover:border-on-dark"
+                    className="cursor-pointer label-caps text-[10px] rounded-full border border-hairline px-3 py-1 hover:border-hairline-strong"
                   >
                     Select
                   </button>
@@ -185,7 +185,7 @@ export default function ModelManager() {
                 <button
                   type="button"
                   onClick={() => handleDelete(m.name)}
-                  className="cursor-pointer label-caps text-[10px] border border-hairline px-2 py-1 text-m-red hover:border-m-red"
+                  className="cursor-pointer label-caps text-[10px] rounded-full border border-hairline px-3 py-1 text-m-red hover:border-m-red"
                 >
                   Delete
                 </button>
@@ -214,7 +214,7 @@ function DownloadProgress({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -6 }}
       transition={{ duration: 0.25, ease: "easeOut" }}
-      className="border border-hairline bg-surface px-3 py-3"
+      className="border border-hairline rounded-2xl bg-surface-card backdrop-blur-xl px-3 py-3"
     >
       {/* Header row: status + filename / percentage readout */}
       <div className="flex items-baseline justify-between gap-3 mb-2.5">
@@ -222,7 +222,7 @@ function DownloadProgress({
           <div className="flex items-center gap-2">
             <motion.span
               aria-hidden="true"
-              className="inline-block h-1.5 w-1.5 rounded-full bg-m-blue-dark"
+              className="inline-block h-1.5 w-1.5 rounded-full m-stripe"
               animate={reduced ? undefined : { opacity: [1, 0.25, 1] }}
               transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
             />
@@ -249,11 +249,11 @@ function DownloadProgress({
         aria-valuemax={100}
         aria-valuenow={hasPercent ? Math.round(percent) : undefined}
         aria-label="Model download progress"
-        className="relative h-2.5 w-full overflow-hidden border border-hairline bg-canvas"
+        className="relative h-2.5 w-full rounded-full overflow-hidden border border-hairline bg-canvas"
       >
         {hasPercent ? (
           <motion.div
-            className="relative h-full m-stripe"
+            className="relative h-full rounded-full m-stripe"
             initial={{ width: 0 }}
             animate={{ width: `${percent}%` }}
             transition={{ duration: 0.5, ease: "easeOut" }}
@@ -276,7 +276,7 @@ function DownloadProgress({
           // Indeterminate: no content-length reported, sweep a segment instead.
           <motion.div
             aria-hidden="true"
-            className="absolute inset-y-0 w-1/3 m-stripe"
+            className="absolute inset-y-0 w-1/3 rounded-full m-stripe"
             animate={reduced ? { x: "0%" } : { x: ["-40%", "260%"] }}
             transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
           />

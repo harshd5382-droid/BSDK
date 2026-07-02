@@ -154,7 +154,7 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
 
   if (!clusterToken) {
     return (
-      <div className="text-sm text-muted font-light border border-hairline px-4 py-3">
+      <div className="text-sm text-muted font-light border border-hairline rounded-xl px-4 py-3 backdrop-blur-xl bg-surface-soft">
         Set a cluster token on worker PCs to enable remote control from here.
       </div>
     );
@@ -162,7 +162,7 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
 
   if (workers.length === 0) {
     return (
-      <div className="text-sm text-muted font-light border border-hairline px-4 py-3">
+      <div className="text-sm text-muted font-light border border-hairline rounded-xl px-4 py-3 backdrop-blur-xl bg-surface-soft">
         No remote workers discovered yet. Workers appear here when they join the
         cluster via Auto Discovery.
       </div>
@@ -170,8 +170,8 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
   }
 
   return (
-    <div className="bg-surface-soft border border-hairline">
-      <div className="h-1 w-full m-stripe" aria-hidden="true" />
+    <div className="bg-surface-soft border border-hairline rounded-2xl backdrop-blur-xl overflow-hidden">
+      <div className="h-1 w-full m-stripe opacity-70" aria-hidden="true" />
       <div className="px-5 py-4">
         <div className="label-caps text-[12px] text-muted mb-3">Remote Workers</div>
         {error && (
@@ -200,7 +200,7 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
             return (
               <li
                 key={w.host}
-                className="flex flex-wrap items-center justify-between gap-3 border border-hairline px-3 py-3"
+                className="flex flex-wrap items-center justify-between gap-3 border border-hairline rounded-xl px-3 py-3 bg-surface-card/40"
               >
                 <div>
                   <div className="font-display text-on-dark">{w.host}</div>
@@ -240,7 +240,7 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
                         : "Worker launcher offline — start dashboard on worker PC"
                     }
                     onClick={() => runAction(w.host, "start")}
-                    className="cursor-pointer label-caps text-[10px] border border-hairline px-2 py-1 min-h-[32px] disabled:opacity-40"
+                    className="cursor-pointer label-caps text-[10px] rounded-full border border-hairline px-3 py-1 min-h-[32px] disabled:opacity-40"
                   >
                     Start
                   </motion.button>
@@ -254,7 +254,7 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
                         : "Worker launcher offline — start dashboard on worker PC"
                     }
                     onClick={() => runAction(w.host, "stop")}
-                    className="cursor-pointer label-caps text-[10px] border border-hairline px-2 py-1 min-h-[32px] disabled:opacity-40"
+                    className="cursor-pointer label-caps text-[10px] rounded-full border border-hairline px-3 py-1 min-h-[32px] disabled:opacity-40"
                   >
                     Stop
                   </motion.button>
