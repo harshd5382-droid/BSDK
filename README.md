@@ -10,6 +10,8 @@ Generation 1 prototype implementation lives in [`distributed-ai-os/`](distribute
 | Phase 2 | **Complete** (spec; Gen 2 implemented, Gen 3–5 specified) | `distributed-ai-os/docs/phase-2-engineering-specification.md` |
 | Phase 3 | Reference only | `goal/Phase_3_Autonomous_Engineering_Program.md` |
 
+CI now runs via GitHub Actions at `.github/workflows/ci.yml` (Python lint+tests on Ubuntu/Windows and dashboard build on Ubuntu).
+
 ## Quick Start
 
 ```bash

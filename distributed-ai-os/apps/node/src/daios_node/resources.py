@@ -111,6 +111,7 @@ def _caps_dict(caps: ResourceCapsConfig) -> dict[str, float]:
 def gather_advertisement(
     config: NodeConfig,
     current_workload: int = 0,
+    queue_depth: int = 0,
     rtt_ms: dict[str, float] | None = None,
 ) -> ResourceAdvertisement:
     """Build a full resource advertisement for gossip."""
@@ -135,6 +136,7 @@ def gather_advertisement(
         user_idle_seconds=_gather_user_idle_seconds(),
         configured_caps=_caps_dict(config.resource_caps),
         current_workload=current_workload,
+        queue_depth=queue_depth,
         timestamp=datetime.now(timezone.utc),
     )
 

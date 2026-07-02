@@ -27,9 +27,10 @@ class CoordinatorRegistry:
         self,
         members: list[MemberInfo],
         request_id: str | None = None,
+        worker_endpoints: list[str] | None = None,
     ) -> CoordinatorLease:
         rid = request_id or str(uuid.uuid4())
-        workers = self._select_workers(members)
+        workers = worker_endpoints if worker_endpoints is not None else self._select_workers(members)
         now = datetime.now(timezone.utc)
         lease = CoordinatorLease(
             request_id=rid,

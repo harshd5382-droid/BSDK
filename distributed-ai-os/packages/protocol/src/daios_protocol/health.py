@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from enum import Enum
 
 from pydantic import BaseModel, Field
+from daios_protocol.scheduling import SchedulerStats
 
 
 class ProcessState(str, Enum):
@@ -56,6 +57,7 @@ class ResourceAdvertisement(BaseModel):
     user_idle_seconds: float | None = None
     configured_caps: dict[str, float] = Field(default_factory=dict)
     current_workload: int = 0
+    queue_depth: int = 0
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -148,5 +150,6 @@ class ClusterStatus(BaseModel):
     local_model_usage: ModelUsage | None = None
     coordinator_ip: str | None = None
     membership: MembershipView | None = None
+    scheduler: SchedulerStats | None = None
     # Worker hosts temporarily excluded from the RPC pool (still cluster members).
     paused_workers: list[str] = Field(default_factory=list)

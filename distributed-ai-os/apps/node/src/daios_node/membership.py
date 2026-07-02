@@ -42,11 +42,13 @@ class MembershipService:
         discovery: DiscoveryService,
         coordinator_registry: CoordinatorRegistry,
         model_usage_fn: Callable[[], ModelUsage] | None = None,
+        queue_depth_fn: Callable[[], int] | None = None,
     ) -> None:
         self.config = config
         self.discovery = discovery
         self.coordinator_registry = coordinator_registry
         self._model_usage_fn = model_usage_fn
+        self._queue_depth_fn = queue_depth_fn
         self._members: dict[str, MemberInfo] = {}
         self._membership_version = 0
         self._running = False
@@ -57,6 +59,7 @@ class MembershipService:
         ad = gather_advertisement(
             self.config,
             current_workload=len(self.coordinator_registry.active_leases()),
+            queue_depth=self._queue_depth_fn() if self._queue_depth_fn else 0,
             rtt_ms=self._rtt_ms,
         )
         return MemberInfo(
@@ -153,6 +156,7 @@ class MembershipService:
             advertisement=gather_advertisement(
                 self.config,
                 current_workload=len(self.coordinator_registry.active_leases()),
+                queue_depth=self._queue_depth_fn() if self._queue_depth_fn else 0,
                 rtt_ms=self._rtt_ms,
             ),
             active_leases=self.coordinator_registry.active_leases(),

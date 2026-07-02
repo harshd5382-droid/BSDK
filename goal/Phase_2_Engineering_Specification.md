@@ -630,4 +630,4 @@ All mandated deliverables are present (verified 2026-06-30):
 
 Generation 2 (peer-to-peer discovery, gossip membership, ephemeral coordinators) is implemented in `apps/node` and opt-in via `discovery.enabled: true`, backward compatible with Gen 1 manual YAML. Generations 3–5 are specified but not yet implemented.
 
-**Deferred (non-blocking):** CI/CD pipeline automation and Operations/Troubleshooting guides — tracked for `deploy/` and the Gen 3 operations guide respectively.
+CI/CD pipeline automation and Operations/Troubleshooting guides are now implemented in the codebase (`.github/workflows/ci.yml`, `distributed-ai-os/docs/operations-guide.md`, `distributed-ai-os/docs/troubleshooting-guide.md`).

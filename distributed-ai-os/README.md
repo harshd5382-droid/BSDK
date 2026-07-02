@@ -214,6 +214,8 @@ make test
 make benchmark
 ```
 
+Repository CI is defined in `../.github/workflows/ci.yml` (Ubuntu/Windows Python checks + dashboard build).
+
 ## Architecture (Generation 1)
 
 ```mermaid
@@ -327,6 +329,8 @@ The cluster token (`X-DAIOS-Token` header) is a **LAN shared secret**. Anyone on
 - [Phase 1 research & architecture strategy](docs/phase-1-research-architecture.md) — multi-generation research
 - [Generation 1 architecture](docs/architecture-gen1.md) — manual peer prototype
 - [Generation 2 architecture](docs/architecture-gen2.md) — discovery, membership, coordinator
+- [Operations guide](docs/operations-guide.md) — install, ports, logs, upgrade/rollback
+- [Troubleshooting guide](docs/troubleshooting-guide.md) — common failure diagnosis and fixes
 
 ## Research Findings
 

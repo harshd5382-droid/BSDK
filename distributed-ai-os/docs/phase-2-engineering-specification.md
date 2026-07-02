@@ -103,8 +103,8 @@ Gen 2 is opt-in via `discovery.enabled: true` and remains backward compatible wi
 - [x] Performance targets
 - [x] Mermaid diagrams (throughout sub-docs)
 - [x] Step-by-step implementation order
-- [ ] CI/CD strategy (deferred to deploy/)
-- [ ] Operations / Troubleshooting guides (deferred to docs/)
+- [x] CI/CD strategy (`.github/workflows/ci.yml`)
+- [x] Operations / Troubleshooting guides (`docs/operations-guide.md`, `docs/troubleshooting-guide.md`)
 
 ---
 
