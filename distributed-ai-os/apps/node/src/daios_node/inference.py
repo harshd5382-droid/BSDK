@@ -7,6 +7,7 @@ import logging
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -18,9 +19,37 @@ from pathlib import Path
 from typing import Callable
 
 from daios_protocol.config import NodeConfig
-from daios_protocol.health import InferenceStatus, ProcessState
+from daios_protocol.health import (
+    DeviceAllocation,
+    DistributionDiagnostics,
+    InferenceStatus,
+    NodeCapabilities,
+    ProcessState,
+)
+
+from daios_node.allocation import (
+    compute_allocation,
+    parse_device_listing,
+    probe_llama_devices,
+    redact_command,
+)
 
 logger = logging.getLogger(__name__)
+
+# Debounce for topology-driven llama-server restarts when no distribution
+# config is present (legacy configs get safe restarts too).
+_DEFAULT_RESTART_DEBOUNCE = 10.0
+
+
+def _tcp_ready(host: str, port: int, timeout: float = 1.0) -> bool:
+    """One connect/close probe. Only used against endpoints that are NOT in
+    the running llama-server's --rpc list, so the single-threaded
+    ggml-rpc-server on the other end is never busy when we poke it."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
 
 
 @dataclass
@@ -50,7 +79,7 @@ class ManagedProcess:
             else:
                 stdout = subprocess.DEVNULL
 
-            logger.info("Starting %s: %s", self.name, " ".join(self.command))
+            logger.info("Starting %s: %s", self.name, " ".join(redact_command(self.command)))
             # CREATE_NO_WINDOW: output goes to the log file; without it a console
             # child (llama-server / ggml-rpc-server) of a windowed parent pops up
             # its own console window on Windows.
@@ -190,39 +219,63 @@ class InferenceManager:
         self._restart_timestamps: dict[str, deque[float]] = defaultdict(deque)
         self._restart_backoff: dict[str, float] = {}
         self._restart_window_seconds = 600.0
+        # --- distribution / topology state ---
+        self._lifecycle_lock = threading.Lock()
+        self._worker_caps: dict[str, NodeCapabilities] = {}  # by host
+        self._worker_rtt: dict[str, float] = {}  # by host
+        self._topology_changed_at: float = 0.0
+        self._launched_endpoints: list[str] | None = None
+        self._llama_start_deferred: bool = False
+        self._defer_deadline: float = 0.0
+        self._reload_requested: bool = False
+        self._restart_state: str = "idle"
+        self._restart_error: str | None = None
+        self._last_devices: list[DeviceAllocation] = []
+        self._last_tensor_split: str | None = None
+        self._excluded_endpoints: dict[str, str] = {}
+        self._fallback_reason: str | None = None
+        self._effective_command: list[str] | None = None
 
     def _log_path(self, name: str) -> Path:
         return self._log_dir / f"{self.config.node_id}-{name}.log"
 
     def set_peer_hosts(self, hosts: list[str]) -> None:
-        """Update RPC peer hosts (Generation 2 discovery). Restarts llama-server if running."""
+        """Update RPC peer hosts (Generation 2 discovery).
+
+        Takes effect in ``rpc_endpoints_effective()`` immediately; a running
+        llama-server is NOT restarted inline — the topology is marked stale
+        and ``maybe_apply_topology`` restarts it safely (debounced, and only
+        once active requests drain).
+        """
         if hosts == self._peer_hosts:
             return
         self._peer_hosts = hosts
-        self._restart_llama_if_running()
+        self._topology_changed_at = time.monotonic()
 
     def set_excluded_hosts(self, hosts: set[str]) -> None:
         """Exclude worker hosts from the RPC pool (temporary disconnect).
 
         The workers stay up and remain cluster members; their memory just isn't
         pooled. Applies to both static (Gen 1) and discovered (Gen 2) peers.
-        Restarts llama-server if the exclusion set changes while it is running.
+        Like ``set_peer_hosts``, the restart is deferred and safe.
         """
         if hosts == self._excluded_hosts:
             return
         self._excluded_hosts = set(hosts)
-        self._restart_llama_if_running()
+        self._topology_changed_at = time.monotonic()
+
+    def set_worker_capabilities(self, caps: dict[str, NodeCapabilities]) -> None:
+        """Advertised capabilities of worker nodes, keyed by host."""
+        self._worker_caps = dict(caps)
+
+    def set_worker_rtt(self, rtt_ms: dict[str, float]) -> None:
+        """Measured heartbeat round-trip time per worker host (ms)."""
+        self._worker_rtt = dict(rtt_ms)
 
     def rpc_endpoints_effective(self) -> list[str]:
         """The RPC endpoints llama-server would be started with right now."""
         endpoints = self.config.rpc_endpoints(self._peer_hosts)
         return [ep for ep in endpoints if ep.rsplit(":", 1)[0] not in self._excluded_hosts]
-
-    def _restart_llama_if_running(self) -> None:
-        if self.config.runs_coordinator and self.config.inference.backend != "mock":
-            if self.llama_server and self.llama_server.state == ProcessState.RUNNING:
-                self.llama_server.stop()
-                self._start_llama_server()
 
     def start(self) -> None:
         if self.config.inference.backend == "mock":
@@ -238,20 +291,40 @@ class InferenceManager:
         if self.config.runs_rpc_server:
             self._start_rpc_server()
         if self.config.runs_coordinator:
-            self._start_llama_server()
+            dist = self.config.inference.distribution
+            if (
+                dist is not None
+                and self.config.discovery_enabled
+                and not self.rpc_endpoints_effective()
+            ):
+                # Gen 2 + distribution: don't load the model with zero workers
+                # only to reload seconds later when discovery finds them. Wait
+                # up to wait_for_workers_seconds, then start solo.
+                self._llama_start_deferred = True
+                self._defer_deadline = time.monotonic() + dist.wait_for_workers_seconds
+                self._restart_state = "pending"
+                logger.info(
+                    "Deferring llama-server start up to %.0fs while discovery finds workers",
+                    dist.wait_for_workers_seconds,
+                )
+            else:
+                self._start_llama_server()
         self._started_at = time.monotonic()
 
     def stop(self) -> None:
-        if self.llama_server:
-            self.llama_server.stop()
-        if self.rpc_server:
-            self.rpc_server.stop()
-        if self._mock_rpc:
-            self._mock_rpc.stop()
-            self._mock_rpc = None
-        self._started_at = None
-        self._restart_timestamps.clear()
-        self._restart_backoff.clear()
+        with self._lifecycle_lock:
+            if self.llama_server:
+                self.llama_server.stop()
+            if self.rpc_server:
+                self.rpc_server.stop()
+            if self._mock_rpc:
+                self._mock_rpc.stop()
+                self._mock_rpc = None
+            self._started_at = None
+            self._llama_start_deferred = False
+            self._restart_state = "idle"
+            self._restart_timestamps.clear()
+            self._restart_backoff.clear()
 
     def status(self) -> InferenceStatus:
         llama_state = ProcessState.STOPPED
@@ -291,18 +364,217 @@ class InferenceManager:
         if self.config.inference.auto_restart is False:
             return
 
-        if self.rpc_server:
-            self._ensure_process_running(
-                self.rpc_server,
-                self._start_rpc_server,
-                should_run=self.config.runs_rpc_server,
+        with self._lifecycle_lock:
+            if self.rpc_server:
+                self._ensure_process_running(
+                    self.rpc_server,
+                    self._start_rpc_server,
+                    should_run=self.config.runs_rpc_server,
+                )
+            if self.llama_server:
+                self._ensure_process_running(
+                    self.llama_server,
+                    self._start_llama_server,
+                    should_run=self.config.runs_coordinator,
+                )
+
+    # ------------------------------------------------------------------
+    # Topology lifecycle (late worker joins / departures / pause-resume)
+    # ------------------------------------------------------------------
+
+    @property
+    def topology_stale(self) -> bool:
+        """True when the running llama-server's --rpc list no longer matches
+        the desired RPC topology (llama.cpp cannot add RPC devices to a
+        loaded model — a controlled restart is required)."""
+        if self.config.inference.backend == "mock" or not self.config.runs_coordinator:
+            return False
+        if self._llama_start_deferred:
+            return True
+        if self.llama_server is None or self.llama_server.state != ProcessState.RUNNING:
+            return False
+        return sorted(self._launched_endpoints or []) != sorted(self.rpc_endpoints_effective())
+
+    def request_reload(self) -> str:
+        """Operator-triggered model reload with the current topology.
+
+        Bypasses the debounce but still waits for active requests to finish;
+        applied by ``maybe_apply_topology`` on the next lifecycle tick.
+        """
+        self._reload_requested = True
+        self._restart_state = "pending"
+        return self._restart_state
+
+    def _restart_debounce(self) -> float:
+        dist = self.config.inference.distribution
+        return dist.restart_debounce_seconds if dist else _DEFAULT_RESTART_DEBOUNCE
+
+    def maybe_apply_topology(self, active_requests: int = 0) -> None:
+        """Apply pending topology changes with a controlled llama-server restart.
+
+        Called periodically (and never inline from request handlers) so that:
+        - unstable discovery events are debounced, not applied one by one;
+        - active inference requests and leases drain before the restart;
+        - a worker that merely *announced* itself but whose RPC port is not
+          reachable yet does not trigger a restart loop.
+        """
+        if self.config.inference.backend == "mock" or not self.config.runs_coordinator:
+            return
+
+        with self._lifecycle_lock:
+            now = time.monotonic()
+
+            if self._llama_start_deferred:
+                endpoints = self.rpc_endpoints_effective()
+                if endpoints and now - self._topology_changed_at >= self._restart_debounce():
+                    logger.info("Workers discovered; starting llama-server with --rpc %s", endpoints)
+                elif now < self._defer_deadline:
+                    return
+                else:
+                    logger.warning(
+                        "No workers became ready within wait_for_workers_seconds; "
+                        "starting llama-server with local resources only"
+                    )
+                self._llama_start_deferred = False
+                self._run_controlled_restart()
+                return
+
+            force = self._reload_requested
+            if not force and not self.topology_stale:
+                if self._restart_state == "pending":
+                    self._restart_state = "idle"
+                return
+
+            if not force:
+                if now - self._topology_changed_at < self._restart_debounce():
+                    self._restart_state = "pending"
+                    return
+                # Don't restart for endpoints that were announced but are not
+                # actually reachable yet — that would loop through failed loads.
+                launched = set(self._launched_endpoints or [])
+                effective = set(self.rpc_endpoints_effective())
+                added = effective - launched
+                removed = launched - effective
+                if added and not removed:
+                    reachable = [ep for ep in added if self._endpoint_ready(ep)]
+                    if not reachable:
+                        self._restart_state = "pending"
+                        return
+
+            if active_requests > 0:
+                self._restart_state = "pending"
+                logger.info(
+                    "Topology change pending: waiting for %d active request(s) to finish",
+                    active_requests,
+                )
+                return
+
+            self._reload_requested = False
+            self._run_controlled_restart()
+
+    def _run_controlled_restart(self) -> None:
+        self._restart_state = "running"
+        self._restart_error = None
+        try:
+            if self.llama_server is not None:
+                self.llama_server.stop()
+            self._start_llama_server()
+            state = (
+                self.llama_server.refresh_state() if self.llama_server else ProcessState.FAILED
             )
-        if self.llama_server:
-            self._ensure_process_running(
-                self.llama_server,
-                self._start_llama_server,
-                should_run=self.config.runs_coordinator,
-            )
+            if state == ProcessState.RUNNING:
+                self._restart_state = "success"
+                logger.info(
+                    "llama-server restarted with RPC endpoints %s", self._launched_endpoints
+                )
+            else:
+                self._restart_state = "failed"
+                self._restart_error = (
+                    self.llama_server.last_error if self.llama_server else "not started"
+                )
+                logger.error("llama-server restart failed: %s", self._restart_error)
+        except Exception as exc:  # pragma: no cover - defensive
+            self._restart_state = "failed"
+            self._restart_error = str(exc)
+            logger.exception("llama-server restart raised")
+
+    @staticmethod
+    def _endpoint_ready(endpoint: str) -> bool:
+        host, _, port = endpoint.rpartition(":")
+        try:
+            return _tcp_ready(host, int(port))
+        except ValueError:
+            return False
+
+    def _wait_for_rpc_ready(
+        self, endpoints: list[str], timeout: float
+    ) -> tuple[list[str], dict[str, str]]:
+        """Wait until each RPC endpoint accepts TCP, up to ``timeout`` total.
+
+        Returns (ready_endpoints, excluded_endpoint -> reason). Order of the
+        ready list preserves the input (and therefore --rpc/device) order.
+        """
+        deadline = time.monotonic() + timeout
+        remaining = list(endpoints)
+        reached: set[str] = set()
+        while True:  # always probe at least once, even with timeout=0
+            still_pending: list[str] = []
+            for ep in remaining:
+                if self._endpoint_ready(ep):
+                    reached.add(ep)
+                else:
+                    still_pending.append(ep)
+            remaining = still_pending
+            if not remaining or time.monotonic() >= deadline:
+                break
+            time.sleep(0.5)
+        ready = [ep for ep in endpoints if ep in reached]
+        excluded = {
+            ep: f"RPC port not reachable within {timeout:.0f}s"
+            for ep in endpoints
+            if ep not in reached
+        }
+        return ready, excluded
+
+    def _probe_devices(self, binary: str, rpc_endpoints: list[str]):
+        """Indirection point so tests can inject fake device listings."""
+        return probe_llama_devices(binary, rpc_endpoints)
+
+    def rpc_server_devices(self) -> list[str]:
+        """Devices the local ggml-rpc-server exposes, parsed from its startup
+        banner in the log file (measured; empty when unknown)."""
+        if self.rpc_server is None or self.rpc_server.log_path is None:
+            return []
+        try:
+            data = self.rpc_server.log_path.read_bytes()
+        except OSError:
+            return []
+        text = data[-8000:].decode("utf-8", errors="replace")
+        return [d.name for d in parse_device_listing(text)]
+
+    def distribution_diagnostics(
+        self,
+        active_requests: int = 0,
+        local_capabilities: NodeCapabilities | None = None,
+    ) -> DistributionDiagnostics:
+        dist = self.config.inference.distribution
+        return DistributionDiagnostics(
+            policy=dist.policy if dist else None,
+            backend=self.config.inference.backend,
+            tensor_split=self._last_tensor_split,
+            devices=self._last_devices,
+            rpc_endpoints=self.rpc_endpoints_effective(),
+            launched_rpc_endpoints=self._launched_endpoints,
+            excluded_endpoints=self._excluded_endpoints,
+            topology_stale=self.topology_stale,
+            restart_state=self._restart_state,
+            restart_error=self._restart_error,
+            effective_command=self._effective_command,
+            fallback_reason=self._fallback_reason,
+            active_requests=active_requests,
+            local_capabilities=local_capabilities,
+            workers=self._worker_caps,
+        )
 
     def _ensure_process_running(
         self, proc: ManagedProcess, start_fn: Callable[[], None], *, should_run: bool
@@ -359,6 +631,63 @@ class InferenceManager:
             raise ValueError("inference.model_path is required for llama.cpp coordinator")
 
         binary = _resolve_binary(inf.llama_server_bin, ["llama-server"])
+        rpc_endpoints = self.rpc_endpoints_effective()
+        tensor_split = inf.tensor_split
+        self._excluded_endpoints = {}
+        self._last_devices = []
+        self._fallback_reason = None
+
+        dist = inf.distribution
+        if dist is not None:
+            rpc_endpoints, excluded = self._wait_for_rpc_ready(
+                rpc_endpoints, dist.wait_for_workers_seconds
+            )
+            self._excluded_endpoints = excluded
+            for ep, reason in excluded.items():
+                logger.warning("Excluding RPC endpoint %s: %s", ep, reason)
+
+            probed = self._probe_devices(binary, rpc_endpoints)
+            if probed is None:
+                self._fallback_reason = (
+                    "device probe failed; using llama.cpp default proportional split"
+                )
+                logger.warning(self._fallback_reason)
+            else:
+                result = compute_allocation(
+                    dist,
+                    probed,
+                    self.config.node_id,
+                    worker_caps=self._worker_caps,
+                    rtt_ms_by_host=self._worker_rtt,
+                )
+                self._last_devices = result.devices
+                self._fallback_reason = result.fallback_reason
+                for alloc in result.devices:
+                    if alloc.excluded_reason:
+                        logger.warning(
+                            "Device %s excluded from allocation: %s",
+                            alloc.name,
+                            alloc.excluded_reason,
+                        )
+                    else:
+                        logger.info(
+                            "Device %s (%s, %s): free %.1f GB, usable %.1f GB, "
+                            "weight %.4f (%.1f%% of model tensors, estimated)",
+                            alloc.name,
+                            alloc.kind,
+                            alloc.memory_type,
+                            alloc.free_gb or 0.0,
+                            alloc.usable_gb,
+                            alloc.weight,
+                            alloc.share_percent or 0.0,
+                        )
+                if inf.tensor_split:
+                    logger.info(
+                        "inference.tensor_split is set explicitly; overriding computed split"
+                    )
+                elif result.tensor_split:
+                    tensor_split = result.tensor_split
+
         cmd = [
             binary,
             "--host",
@@ -378,13 +707,17 @@ class InferenceManager:
         # Single slot avoids parallel requests competing for CPU/RPC bandwidth.
         cmd.extend(["-np", "1", "--cont-batching", "--mlock"])
 
-        rpc_endpoints = self.rpc_endpoints_effective()
         if rpc_endpoints:
             cmd.extend(["--rpc", ",".join(rpc_endpoints)])
-        if inf.tensor_split:
-            cmd.extend(["--tensor-split", inf.tensor_split])
+        if tensor_split:
+            cmd.extend(["--tensor-split", tensor_split])
         if inf.extra_args:
             cmd.extend(inf.extra_args)
+
+        self._launched_endpoints = list(rpc_endpoints)
+        self._last_tensor_split = tensor_split
+        self._effective_command = redact_command(cmd)
+        logger.info("Effective llama-server command: %s", " ".join(self._effective_command))
 
         self.llama_server = ManagedProcess(
             name="llama-server", command=cmd, log_path=self._log_path("llama-server")

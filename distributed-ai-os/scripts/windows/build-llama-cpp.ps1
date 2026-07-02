@@ -1,8 +1,17 @@
 # Build llama.cpp with GGML RPC on Windows (requires CMake + MSVC).
+#
+# IMPORTANT: without -Cuda or -Vulkan this produces CPU-ONLY binaries. A
+# CPU-only ggml-rpc-server.exe exposes no GPU device, so a worker's GPU/VRAM
+# can never be used by the cluster no matter how the coordinator is
+# configured. Build with the backend matching the machine's GPU:
+#   -Cuda    NVIDIA GPUs (requires CUDA Toolkit)
+#   -Vulkan  any modern GPU incl. AMD/Intel (requires Vulkan SDK)
 param(
     [string]$BuildDir = "$env:TEMP\llama.cpp-build",
     [string]$SrcDir = "$env:TEMP\llama.cpp-src",
-    [string]$InstallDir = ""
+    [string]$InstallDir = "",
+    [switch]$Cuda,
+    [switch]$Vulkan
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,12 +31,21 @@ if (-not (Test-Path $SrcDir)) {
 
 if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
 
+$backendFlags = @()
+if ($Cuda) { $backendFlags += "-DGGML_CUDA=ON" }
+if ($Vulkan) { $backendFlags += "-DGGML_VULKAN=ON" }
+if (-not $backendFlags) {
+    Write-Warning "No GPU backend selected (-Cuda / -Vulkan): binaries will be CPU-only."
+    Write-Warning "A CPU-only ggml-rpc-server exposes no GPU device to the cluster."
+}
+
 cmake -S $SrcDir -B $BuildDir `
     -DCMAKE_BUILD_TYPE=Release `
     -DGGML_RPC=ON `
     -DLLAMA_CURL=OFF `
     -DLLAMA_BUILD_TESTS=OFF `
-    -DLLAMA_BUILD_EXAMPLES=OFF
+    -DLLAMA_BUILD_EXAMPLES=OFF `
+    @backendFlags
 Assert-LastExitCode "cmake configure"
 
 cmake --build $BuildDir --config Release --target ggml-rpc-server llama-server -j

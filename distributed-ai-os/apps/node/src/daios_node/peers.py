@@ -9,7 +9,7 @@ import time
 import httpx
 
 from daios_protocol.config import NodeConfig, PeerConfig
-from daios_protocol.health import ModelUsage, PeerStatus, ResourceUsage
+from daios_protocol.health import ModelUsage, NodeCapabilities, PeerStatus, ResourceUsage
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +68,7 @@ async def check_peer(peer: PeerConfig, timeout: float = 3.0) -> PeerStatus:
                 )
             resources: ResourceUsage | None = None
             model_usage: ModelUsage | None = None
+            capabilities: NodeCapabilities | None = None
             try:
                 payload = response.json()
                 raw = payload.get("resources")
@@ -76,9 +77,13 @@ async def check_peer(peer: PeerConfig, timeout: float = 3.0) -> PeerStatus:
                 raw_model = payload.get("model_usage")
                 if raw_model:
                     model_usage = ModelUsage.model_validate(raw_model)
+                raw_caps = payload.get("capabilities")
+                if raw_caps:
+                    capabilities = NodeCapabilities.model_validate(raw_caps)
             except (ValueError, TypeError):
                 resources = None
                 model_usage = None
+                capabilities = None
             return PeerStatus(
                 id=peer.id,
                 host=peer.host,
@@ -87,6 +92,7 @@ async def check_peer(peer: PeerConfig, timeout: float = 3.0) -> PeerStatus:
                 latency_ms=latency_ms,
                 resources=resources,
                 model_usage=model_usage,
+                capabilities=capabilities,
             )
         except httpx.HTTPError as exc:
             return PeerStatus(

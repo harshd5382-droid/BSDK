@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import platform
 import shutil
 import threading
 import time as _time
@@ -12,7 +13,12 @@ import psutil
 
 from daios_node.platform_utils import system_disk_root
 from daios_protocol.config import NodeConfig, ResourceCapsConfig
-from daios_protocol.health import GpuInfo, ResourceAdvertisement, ResourceUsage
+from daios_protocol.health import (
+    GpuInfo,
+    NodeCapabilities,
+    ResourceAdvertisement,
+    ResourceUsage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +56,24 @@ def gather_resources() -> ResourceUsage:
         ram_total_gb=round(mem.total / (1024**3), 2),
         ram_percent=mem.percent,
     )
+
+
+# nvidia-smi is an external process; heartbeats, health checks, and capability
+# reports may all ask within the same second. Cache briefly like the CPU value.
+_gpu_lock: threading.Lock = threading.Lock()
+_gpu_value: GpuInfo | None = None
+_gpu_ts: float = 0.0
+_GPU_TTL: float = 2.0
+
+
+def _gather_gpu_info_cached() -> GpuInfo | None:
+    global _gpu_value, _gpu_ts
+    now = _time.monotonic()
+    with _gpu_lock:
+        if now - _gpu_ts >= _GPU_TTL:
+            _gpu_value = _gather_gpu_info()
+            _gpu_ts = now
+        return _gpu_value
 
 
 def _gather_gpu_info() -> GpuInfo | None:
@@ -108,11 +132,69 @@ def _caps_dict(caps: ResourceCapsConfig) -> dict[str, float]:
     return result
 
 
+def _cpu_model() -> str | None:
+    try:
+        name = platform.processor() or platform.uname().processor or platform.machine()
+        return name or None
+    except OSError:
+        return None
+
+
+def gather_capabilities(
+    config: NodeConfig,
+    rpc_ready: bool | None = None,
+    rpc_devices: list[str] | None = None,
+) -> NodeCapabilities:
+    """Snapshot this node's hardware + inference-backend capabilities.
+
+    ``gpu_available`` means GPU *hardware* was detected (via nvidia-smi);
+    whether the llama.cpp binaries can actually use it is a separate,
+    measured question answered by ``rpc_devices`` / the coordinator's device
+    probe. Every metric degrades to None when unavailable.
+    """
+    mem = psutil.virtual_memory()
+    gpu = _gather_gpu_info_cached()
+    notes: list[str] = []
+    if gpu is None:
+        notes.append("no GPU detected (nvidia-smi unavailable or reported no device)")
+    elif rpc_devices is not None and not any(
+        d.upper().startswith(("CUDA", "ROCM", "HIP", "VULKAN", "METAL", "SYCL", "GPU"))
+        for d in rpc_devices
+    ):
+        notes.append(
+            "GPU hardware present but the RPC server binary exposes no GPU device "
+            "(CPU-only build?)"
+        )
+
+    vram_available = None
+    if gpu and gpu.vram_total_gb is not None and gpu.vram_used_gb is not None:
+        vram_available = round(gpu.vram_total_gb - gpu.vram_used_gb, 2)
+
+    return NodeCapabilities(
+        node_id=config.node_id,
+        ram_total_gb=round(mem.total / (1024**3), 2),
+        ram_available_gb=round(mem.available / (1024**3), 2),
+        cpu_model=_cpu_model(),
+        cpu_cores=psutil.cpu_count(logical=True),
+        gpu_available=gpu is not None,
+        gpu_backend="cuda" if gpu is not None else None,
+        gpu_name=gpu.name if gpu else None,
+        gpu_vram_total_gb=gpu.vram_total_gb if gpu else None,
+        gpu_vram_available_gb=vram_available,
+        rpc_ready=rpc_ready,
+        rpc_host=config.network.bind_host,
+        rpc_port=config.network.rpc_port if config.runs_rpc_server else None,
+        rpc_devices=rpc_devices or [],
+        notes=notes,
+    )
+
+
 def gather_advertisement(
     config: NodeConfig,
     current_workload: int = 0,
     queue_depth: int = 0,
     rtt_ms: dict[str, float] | None = None,
+    capabilities: NodeCapabilities | None = None,
 ) -> ResourceAdvertisement:
     """Build a full resource advertisement for gossip."""
     mem = psutil.virtual_memory()
@@ -127,7 +209,7 @@ def gather_advertisement(
         cpu_available_cores=available_cores,
         ram_total_gb=round(mem.total / (1024**3), 2),
         ram_available_gb=round(mem.available / (1024**3), 2),
-        gpu=_gather_gpu_info(),
+        gpu=_gather_gpu_info_cached(),
         disk_free_gb=round(disk.free / (1024**3), 2),
         bandwidth_mbps=None,
         rtt_ms=rtt_ms or {},
@@ -137,6 +219,7 @@ def gather_advertisement(
         configured_caps=_caps_dict(config.resource_caps),
         current_workload=current_workload,
         queue_depth=queue_depth,
+        capabilities=capabilities,
         timestamp=datetime.now(timezone.utc),
     )
 

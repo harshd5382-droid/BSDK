@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class NodeRole(str, Enum):
@@ -70,6 +70,67 @@ class ResourceCapsConfig(BaseModel):
     max_gpu_percent: float | None = None
 
 
+class ManualAllocation(BaseModel):
+    """Explicit per-node allocation weight for ``policy: manual``."""
+
+    weight: float = Field(ge=0.0)
+
+
+class DistributionConfig(BaseModel):
+    """Resource-distribution policy for real llama.cpp inference.
+
+    Opt-in: when the ``inference.distribution`` block is absent from the YAML
+    the node behaves exactly as before (llama.cpp's own default split, no
+    generated ``--tensor-split``). All memory figures are in GB.
+    """
+
+    policy: str = "auto"
+    coordinator_reserve_ram_gb: float = Field(default=4.0, ge=0.0)
+    coordinator_reserve_vram_gb: float = Field(default=1.0, ge=0.0)
+    worker_reserve_ram_gb: float = Field(default=2.0, ge=0.0)
+    worker_reserve_vram_gb: float = Field(default=0.5, ge=0.0)
+    minimum_worker_vram_gb: float = Field(default=0.0, ge=0.0)
+    prefer_worker_devices: bool = True
+    # Weight multiplier applied to CPU-backed (system-RAM) devices under
+    # ``auto`` — memory alone must not attract compute to a slow device.
+    cpu_device_discount: float = Field(default=0.5, gt=0.0, le=1.0)
+    # RTT (ms) at which an RPC device's auto weight is halved.
+    latency_discount_ms: float = Field(default=200.0, gt=0.0)
+    # Weight multiplier for coordinator-local devices under worker_preferred.
+    coordinator_weight_scale: float = Field(default=0.2, ge=0.0, le=1.0)
+    # How long the coordinator waits for worker RPC ports before launching
+    # llama-server (also the grace period for discovery to find workers).
+    wait_for_workers_seconds: float = Field(default=30.0, ge=0.0)
+    # Topology changes must be stable this long before llama-server restarts.
+    restart_debounce_seconds: float = Field(default=10.0, ge=0.0)
+    manual_allocations: dict[str, ManualAllocation] = Field(default_factory=dict)
+
+    @field_validator("policy")
+    @classmethod
+    def validate_policy(cls, value: str) -> str:
+        allowed = {"auto", "balanced", "worker_preferred", "manual"}
+        if value not in allowed:
+            raise ValueError(f"distribution.policy must be one of {sorted(allowed)}")
+        return value
+
+    @field_validator("manual_allocations", mode="before")
+    @classmethod
+    def coerce_manual_allocations(cls, value: Any) -> Any:
+        """Accept both ``node: 0.7`` and ``node: {weight: 0.7}`` shapes."""
+        if isinstance(value, dict):
+            return {
+                key: ({"weight": val} if isinstance(val, (int, float)) else val)
+                for key, val in value.items()
+            }
+        return value
+
+    @model_validator(mode="after")
+    def validate_manual_policy(self) -> "DistributionConfig":
+        if self.policy == "manual" and not self.manual_allocations:
+            raise ValueError("policy 'manual' requires manual_allocations")
+        return self
+
+
 class InferenceConfig(BaseModel):
     """llama.cpp / GGML RPC inference backend settings."""
 
@@ -86,6 +147,8 @@ class InferenceConfig(BaseModel):
     auto_restart: bool = True
     max_restarts: int = 5
     extra_args: list[str] = Field(default_factory=list)
+    # None = legacy behavior (backward compatible with pre-distribution YAML).
+    distribution: DistributionConfig | None = None
 
     @field_validator("backend")
     @classmethod

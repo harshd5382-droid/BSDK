@@ -4,6 +4,7 @@ import { updateLauncher } from "../api/launcher";
 import TopologyGraph from "./TopologyGraph";
 import StatusPill from "./StatusPill";
 import ResourcePanel from "./ResourcePanel";
+import DistributionPanel from "./DistributionPanel";
 import LiveTabBar from "./LiveTabBar";
 import ChatBot from "./ChatBot";
 import ModelManager from "./ModelManager";
@@ -282,6 +283,9 @@ export default function LiveStatus({
             />
           )}
           <ResourcePanel status={status} cluster={cluster} />
+          {isCoordinator && cluster?.distribution && (
+            <DistributionPanel distribution={cluster.distribution} />
+          )}
         </div>
       </div>
 

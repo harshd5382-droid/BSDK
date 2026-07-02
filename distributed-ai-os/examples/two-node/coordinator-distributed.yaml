@@ -1,0 +1,54 @@
+# Distributed AI OS — Generation 1 coordinator with resource distribution.
+#
+# The `inference.distribution` block is OPT-IN: omit it and the node behaves
+# exactly like coordinator.yaml (llama.cpp's own free-memory-proportional
+# split, no generated --tensor-split).
+
+node_id: coordinator-1
+role: coordinator
+
+network:
+  bind_host: 0.0.0.0
+  api_port: 8000
+  rpc_port: 50052
+
+peers:
+  - id: worker-1
+    host: worker
+    rpc_port: 50052
+    api_port: 8001
+
+inference:
+  backend: llama.cpp
+  model_path: /models/model.gguf
+  llama_server_port: 8080
+  n_gpu_layers: 99
+  context_size: 4096
+  rpc_cache: true
+
+  distribution:
+    # auto             weight = usable memory, discounted for CPU-backed
+    #                  devices and network latency
+    # balanced         weight = usable memory only (pure proportional)
+    # worker_preferred like auto, but coordinator devices scaled down
+    # manual           explicit per-node weights (manual_allocations)
+    policy: auto
+
+    # Memory kept free for the OS and other processes (GB).
+    coordinator_reserve_ram_gb: 4
+    coordinator_reserve_vram_gb: 1
+    worker_reserve_ram_gb: 2
+    worker_reserve_vram_gb: 0.5
+
+    # Exclude GPU workers with less free VRAM than this (GB, 0 = disabled).
+    minimum_worker_vram_gb: 0
+
+    # Wait this long for worker RPC ports before launching llama-server.
+    wait_for_workers_seconds: 30
+    # Topology must be stable this long before a model reload.
+    restart_debounce_seconds: 10
+
+    # Only used when policy is manual — keys are node_id or host.
+    # manual_allocations:
+    #   worker-1: 0.7
+    #   coordinator-1: 0.3

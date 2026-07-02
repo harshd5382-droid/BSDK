@@ -11,7 +11,13 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from daios_protocol.config import NodeConfig
-from daios_protocol.health import MemberInfo, MemberStatus, MembershipView, ModelUsage
+from daios_protocol.health import (
+    MemberInfo,
+    MemberStatus,
+    MembershipView,
+    ModelUsage,
+    NodeCapabilities,
+)
 from daios_protocol.messages import HeartbeatMessage, HeartbeatResponse, LeaveMessage
 
 from daios_node.coordinator import CoordinatorRegistry
@@ -43,17 +49,32 @@ class MembershipService:
         coordinator_registry: CoordinatorRegistry,
         model_usage_fn: Callable[[], ModelUsage] | None = None,
         queue_depth_fn: Callable[[], int] | None = None,
+        capabilities_fn: Callable[[], NodeCapabilities] | None = None,
     ) -> None:
         self.config = config
         self.discovery = discovery
         self.coordinator_registry = coordinator_registry
         self._model_usage_fn = model_usage_fn
         self._queue_depth_fn = queue_depth_fn
+        self._capabilities_fn = capabilities_fn
         self._members: dict[str, MemberInfo] = {}
         self._membership_version = 0
         self._running = False
         self._http: httpx.AsyncClient | None = None
         self._rtt_ms: dict[str, float] = {}
+
+    def _local_capabilities(self) -> NodeCapabilities | None:
+        if self._capabilities_fn is None:
+            return None
+        try:
+            return self._capabilities_fn()
+        except Exception:  # pragma: no cover - capability reporting must not break gossip
+            logger.exception("Capability gathering failed")
+            return None
+
+    def get_rtt_ms(self) -> dict[str, float]:
+        """Measured heartbeat RTT per peer node_id (ms)."""
+        return dict(self._rtt_ms)
 
     def _local_member(self) -> MemberInfo:
         ad = gather_advertisement(
@@ -61,6 +82,7 @@ class MembershipService:
             current_workload=len(self.coordinator_registry.active_leases()),
             queue_depth=self._queue_depth_fn() if self._queue_depth_fn else 0,
             rtt_ms=self._rtt_ms,
+            capabilities=self._local_capabilities(),
         )
         return MemberInfo(
             node_id=self.config.node_id,
@@ -158,6 +180,7 @@ class MembershipService:
                 current_workload=len(self.coordinator_registry.active_leases()),
                 queue_depth=self._queue_depth_fn() if self._queue_depth_fn else 0,
                 rtt_ms=self._rtt_ms,
+                capabilities=self._local_capabilities(),
             ),
             active_leases=self.coordinator_registry.active_leases(),
         )

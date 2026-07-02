@@ -40,6 +40,74 @@ class GpuInfo(BaseModel):
     utilization_percent: float | None = None
 
 
+class NodeCapabilities(BaseModel):
+    """Hardware and inference-backend capabilities of a single node.
+
+    ``gpu_available`` reports whether GPU *hardware* was detected on the
+    machine; ``rpc_devices`` reports which devices the node's llama.cpp/RPC
+    binary actually exposes (a CPU-only build exposes no GPU device even when
+    hardware is present). Fields are None when a metric is unavailable.
+    """
+
+    node_id: str | None = None
+    ram_total_gb: float | None = None
+    ram_available_gb: float | None = None
+    cpu_model: str | None = None
+    cpu_cores: int | None = None
+    gpu_available: bool = False
+    gpu_backend: str | None = None  # e.g. "cuda" — hardware detection source
+    gpu_name: str | None = None
+    gpu_vram_total_gb: float | None = None
+    gpu_vram_available_gb: float | None = None
+    rpc_ready: bool | None = None  # ggml-rpc-server process running (workers)
+    rpc_host: str | None = None
+    rpc_port: int | None = None
+    # Devices the local ggml-rpc-server binary exposes, parsed from its
+    # startup banner (measured) — empty when unknown.
+    rpc_devices: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class DeviceAllocation(BaseModel):
+    """Planned allocation for one llama.cpp device (local or RPC)."""
+
+    name: str  # e.g. "CUDA0", "RPC[10.0.0.2:50052]"
+    kind: str = "unknown"  # local_gpu | rpc | unknown
+    endpoint: str | None = None  # host:port for RPC devices
+    node_id: str | None = None
+    memory_type: str = "unknown"  # vram | ram | unknown
+    total_gb: float | None = None
+    free_gb: float | None = None
+    reserve_gb: float = 0.0
+    usable_gb: float = 0.0
+    weight: float = 0.0
+    share_percent: float | None = None
+    excluded_reason: str | None = None
+    # "measured" when memory figures come from the llama.cpp device probe,
+    # "estimated" when derived from advertised capabilities.
+    source: str = "measured"
+
+
+class DistributionDiagnostics(BaseModel):
+    """Observability for distributed tensor placement (coordinator)."""
+
+    policy: str | None = None  # None = legacy (no distribution block)
+    backend: str = "llama.cpp"
+    tensor_split: str | None = None
+    devices: list[DeviceAllocation] = Field(default_factory=list)
+    rpc_endpoints: list[str] = Field(default_factory=list)  # effective now
+    launched_rpc_endpoints: list[str] | None = None  # llama-server started with
+    excluded_endpoints: dict[str, str] = Field(default_factory=dict)
+    topology_stale: bool = False
+    restart_state: str = "idle"  # idle | pending | running | success | failed
+    restart_error: str | None = None
+    effective_command: list[str] | None = None  # secret-redacted
+    fallback_reason: str | None = None
+    active_requests: int = 0
+    local_capabilities: NodeCapabilities | None = None
+    workers: dict[str, NodeCapabilities] = Field(default_factory=dict)
+
+
 class ResourceAdvertisement(BaseModel):
     """Full resource advertisement for Generation 2+ gossip."""
 
@@ -58,6 +126,7 @@ class ResourceAdvertisement(BaseModel):
     configured_caps: dict[str, float] = Field(default_factory=dict)
     current_workload: int = 0
     queue_depth: int = 0
+    capabilities: NodeCapabilities | None = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -79,6 +148,7 @@ class PeerStatus(BaseModel):
     error: str | None = None
     resources: ResourceUsage | None = None
     model_usage: ModelUsage | None = None
+    capabilities: NodeCapabilities | None = None
 
 
 class MemberInfo(BaseModel):
@@ -136,6 +206,7 @@ class NodeHealth(BaseModel):
     uptime_seconds: float = 0.0
     resources: ResourceUsage | None = None
     model_usage: ModelUsage | None = None
+    capabilities: NodeCapabilities | None = None
 
 
 class ClusterStatus(BaseModel):
@@ -153,3 +224,5 @@ class ClusterStatus(BaseModel):
     scheduler: SchedulerStats | None = None
     # Worker hosts temporarily excluded from the RPC pool (still cluster members).
     paused_workers: list[str] = Field(default_factory=list)
+    # Tensor-placement diagnostics (coordinators running the real backend).
+    distribution: DistributionDiagnostics | None = None

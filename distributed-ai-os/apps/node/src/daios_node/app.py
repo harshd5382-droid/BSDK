@@ -15,7 +15,14 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from daios_protocol.config import NodeConfig
-from daios_protocol.health import ClusterStatus, ModelUsage, NodeHealth, ProcessState
+from daios_protocol.health import (
+    ClusterStatus,
+    DistributionDiagnostics,
+    ModelUsage,
+    NodeCapabilities,
+    NodeHealth,
+    ProcessState,
+)
 from daios_protocol.messages import HeartbeatMessage, LeaveMessage
 
 from daios_node.coordinator import CoordinatorRegistry
@@ -26,7 +33,7 @@ from daios_node.membership import MembershipService
 from daios_node.mock_backend import router as mock_router
 from daios_node.model_usage import gather_model_usage
 from daios_node.peers import check_all_peers, count_inbound_rpc_clients
-from daios_node.resources import gather_resources
+from daios_node.resources import gather_capabilities, gather_resources
 from daios_node.security import ApiTokenMiddleware, ensure_dev_certs
 
 logger = logging.getLogger(__name__)
@@ -55,6 +62,7 @@ class NodeApp:
             self.coordinator_registry,
             model_usage_fn=self._local_model_usage,
             queue_depth_fn=lambda: 0,
+            capabilities_fn=self._local_capabilities,
         )
         self._http_client: httpx.AsyncClient | None = None
         self._last_coordinator_ping: float = 0.0
@@ -77,12 +85,58 @@ class NodeApp:
             inbound,
         )
 
+    def _local_capabilities(self) -> NodeCapabilities:
+        rpc_ready: bool | None = None
+        if self.config.runs_rpc_server:
+            rpc_ready = self.inference.status().rpc_server == ProcessState.RUNNING
+        return gather_capabilities(
+            self.config,
+            rpc_ready=rpc_ready,
+            rpc_devices=self.inference.rpc_server_devices(),
+        )
+
     def _sync_inference_peers(self) -> None:
         if not self.config.discovery_enabled:
             return
         hosts = self.membership.get_alive_worker_hosts()
         if hosts:
             self.inference.set_peer_hosts(hosts)
+        view = self.membership.get_membership_view()
+        caps: dict[str, NodeCapabilities] = {}
+        rtt_by_host: dict[str, float] = {}
+        rtt_by_node = self.membership.get_rtt_ms()
+        for m in view.members:
+            if m.node_id == self.config.node_id:
+                continue
+            if m.advertisement and m.advertisement.capabilities:
+                caps[m.host] = m.advertisement.capabilities
+            if m.node_id in rtt_by_node:
+                rtt_by_host[m.host] = rtt_by_node[m.node_id]
+        if caps:
+            self.inference.set_worker_capabilities(caps)
+        if rtt_by_host:
+            self.inference.set_worker_rtt(rtt_by_host)
+
+    def _distribution_summary(self) -> DistributionDiagnostics | None:
+        """Compact distribution view embedded in /api/v1/cluster (dashboard)."""
+        if not self.config.runs_coordinator or self.config.inference.backend == "mock":
+            return None
+        return self.inference.distribution_diagnostics(
+            active_requests=self.inference_tracker.active
+        )
+
+    def _sync_gen1_peer_capabilities(self, peers: list) -> None:
+        caps: dict[str, NodeCapabilities] = {}
+        rtt_by_host: dict[str, float] = {}
+        for p in peers:
+            if getattr(p, "capabilities", None):
+                caps[p.host] = p.capabilities
+            if getattr(p, "latency_ms", None) is not None:
+                rtt_by_host[p.host] = p.latency_ms
+        if caps:
+            self.inference.set_worker_capabilities(caps)
+        if rtt_by_host:
+            self.inference.set_worker_rtt(rtt_by_host)
 
     @asynccontextmanager
     async def lifespan(self, app: FastAPI) -> AsyncIterator[None]:
@@ -94,7 +148,9 @@ class NodeApp:
             discovery_task = asyncio.create_task(self.discovery.run_loop())
             membership_task = asyncio.create_task(self.membership.run())
             self._bg_tasks = [discovery_task, membership_task]
-        if self.config.inference.backend != "mock" and self.config.inference.auto_restart:
+        if self.config.inference.backend != "mock":
+            # Handles auto-restart of failed processes and safe, debounced
+            # llama-server reloads when the RPC topology changes.
             self._bg_tasks.append(asyncio.create_task(self._inference_recovery_loop()))
 
         logger.info(
@@ -144,6 +200,7 @@ class NodeApp:
                 uptime_seconds=self.inference.uptime_seconds(),
                 resources=gather_resources(),
                 model_usage=self._local_model_usage(),
+                capabilities=self._local_capabilities(),
             )
 
         @app.get("/metrics")
@@ -168,6 +225,36 @@ class NodeApp:
                 "generation": gen,
                 "active_coordinator_leases": len(self.coordinator_registry.active_leases()),
             }
+
+        @app.get("/api/v1/distribution")
+        async def distribution() -> DistributionDiagnostics:
+            """Where model tensors and computation are placed, and why.
+
+            Available on every node: workers report their capabilities and
+            RPC readiness; coordinators additionally report the allocation
+            plan, effective launch flags, and topology/restart state.
+            """
+            if self.config.discovery_enabled:
+                self._sync_inference_peers()
+            return self.inference.distribution_diagnostics(
+                active_requests=self.inference_tracker.active,
+                local_capabilities=self._local_capabilities(),
+            )
+
+        @app.post("/api/v1/inference/reload")
+        async def reload_inference():
+            """Controlled model reload with the current RPC topology.
+
+            llama.cpp cannot attach RPC devices to an already-loaded model, so
+            a worker that joins late requires this (or the automatic stale-
+            topology reload). Waits for active requests to drain first.
+            """
+            if not self.config.runs_coordinator:
+                raise HTTPException(status_code=404, detail="Not a coordinator")
+            if self.config.inference.backend == "mock":
+                return {"restart_state": "idle", "detail": "mock backend has no llama-server"}
+            state = self.inference.request_reload()
+            return {"restart_state": state}
 
         @app.get("/api/v1/workers/paused")
         async def paused_workers():
@@ -272,9 +359,11 @@ class NodeApp:
                     coordinator_ip=coordinator_ip,
                     membership=view,
                     paused_workers=sorted(self._paused_hosts),
+                    distribution=self._distribution_summary(),
                 )
 
             peers = await check_all_peers(self.config)
+            self._sync_gen1_peer_capabilities(peers)
             return ClusterStatus(
                 coordinator_node_id=self.config.node_id
                 if self.config.runs_coordinator
@@ -291,6 +380,7 @@ class NodeApp:
                 local_model_usage=self._local_model_usage(),
                 coordinator_ip=coordinator_ip,
                 paused_workers=sorted(self._paused_hosts),
+                distribution=self._distribution_summary(),
             )
 
         if self.config.inference.backend == "mock":
@@ -303,7 +393,17 @@ class NodeApp:
     async def _inference_recovery_loop(self) -> None:
         while True:
             try:
-                self.inference.ensure_running()
+                if self.config.discovery_enabled:
+                    self._sync_inference_peers()
+                # Both calls may block (restart backoff, RPC readiness waits);
+                # run them off the event loop.
+                if self.config.inference.auto_restart:
+                    await asyncio.to_thread(self.inference.ensure_running)
+                active = max(
+                    self.inference_tracker.active,
+                    len(self.coordinator_registry.active_leases()),
+                )
+                await asyncio.to_thread(self.inference.maybe_apply_topology, active)
             except Exception:  # pragma: no cover - safety guard for background task
                 logger.exception("Inference recovery loop failed")
             await asyncio.sleep(5.0)

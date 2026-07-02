@@ -25,7 +25,7 @@ use the PowerShell equivalents instead:
 
 Run tests/lint on Windows directly through the venv: `.venv\Scripts\python.exe -m pytest tests\ -q` and
 `.venv\Scripts\python.exe -m ruff check packages\ apps\node apps\launcher tests\ benchmarks\`. The full suite
-(135 tests, including recovery and mock-backend integration) passes on Windows.
+(200+ tests, including recovery, distribution/allocation, and mock-backend integration) passes on Windows.
 
 CI/CD: GitHub Actions is defined at `../.github/workflows/ci.yml` for Ubuntu/Windows Python checks and
 dashboard build validation.
@@ -65,7 +65,10 @@ Monorepo of three Python packages plus a React dashboard, installed editable int
   shape here, not in the apps.
 - **`apps/node/`** (`daios_node`) — the FastAPI peer daemon (`daios-node`). `app.py` (`NodeApp`) builds the
   app and owns the request lifecycle; the other modules are the subsystems it composes:
-  `inference.py` (`InferenceManager` — spawns/supervises `llama-server` and `ggml-rpc-server` subprocesses),
+  `inference.py` (`InferenceManager` — spawns/supervises `llama-server` and `ggml-rpc-server` subprocesses,
+  gates startup on worker RPC readiness, applies topology changes via debounced safe restarts),
+  `allocation.py` (tensor-placement policy for the opt-in `inference.distribution` config: probes devices
+  with `llama-server --list-devices`, computes `--tensor-split` weights — see `docs/distributed-inference.md`),
   `coordinator.py` (per-request ephemeral leases), `membership.py` + `discovery.py` (Gen 2 mDNS gossip),
   `mock_backend.py` (fake OpenAI responses when `backend: mock`), `peers.py`/`resources.py`/`model_usage.py`.
 - **`apps/launcher/`** (`daios_launcher`) — the one-click control plane (`daios-launcher`) that the dashboard

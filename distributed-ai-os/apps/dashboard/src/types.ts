@@ -85,6 +85,38 @@ export interface PeerStatus {
   model_usage: ModelUsage | null;
 }
 
+export interface DeviceAllocation {
+  name: string;
+  kind: string; // local_gpu | rpc | unknown
+  endpoint: string | null;
+  node_id: string | null;
+  memory_type: string; // vram | ram | unknown
+  total_gb: number | null;
+  free_gb: number | null;
+  reserve_gb: number;
+  usable_gb: number;
+  weight: number;
+  share_percent: number | null;
+  excluded_reason: string | null;
+  source: string; // measured | estimated
+}
+
+export interface DistributionDiagnostics {
+  policy: string | null; // null = legacy (no distribution config)
+  backend: string;
+  tensor_split: string | null;
+  devices: DeviceAllocation[];
+  rpc_endpoints: string[];
+  launched_rpc_endpoints: string[] | null;
+  excluded_endpoints: Record<string, string>;
+  topology_stale: boolean;
+  restart_state: string; // idle | pending | running | success | failed
+  restart_error: string | null;
+  effective_command: string[] | null;
+  fallback_reason: string | null;
+  active_requests: number;
+}
+
 export interface ClusterStatus {
   coordinator_node_id: string | null;
   peers: PeerStatus[];
@@ -96,6 +128,7 @@ export interface ClusterStatus {
   coordinator_ip: string | null;
   membership?: MembershipView | null;
   paused_workers?: string[];
+  distribution?: DistributionDiagnostics | null;
 }
 
 export interface MemberInfo {
