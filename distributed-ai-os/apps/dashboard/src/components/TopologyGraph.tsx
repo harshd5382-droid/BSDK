@@ -18,8 +18,7 @@ export default function TopologyGraph({ status, cluster }: Props) {
 
   if (gen2 && remoteMembers.length > 0) {
     return (
-      <div className="relative py-8 rounded-2xl border border-hairline bg-surface-soft backdrop-blur-xl overflow-hidden">
-        <MeshBackdrop />
+      <div className="relative py-8 border border-hairline bg-surface-soft overflow-hidden">
         <div className="relative label-caps text-[12px] text-muted text-center mb-6">
           Cluster members ({remoteMembers.length + 1} nodes)
         </div>
@@ -58,8 +57,7 @@ export default function TopologyGraph({ status, cluster }: Props) {
   const connected = isWorker ? inbound > 0 : (peer?.reachable ?? false);
 
   return (
-    <div className="relative flex items-center justify-center gap-0 py-10 rounded-2xl border border-hairline bg-surface-soft backdrop-blur-xl overflow-hidden">
-      <MeshBackdrop />
+    <div className="relative flex items-center justify-center gap-0 py-12 border border-hairline bg-surface-soft overflow-hidden">
       <div className="relative flex items-center">
         <NodeBox
           label="This PC"
@@ -88,24 +86,6 @@ export default function TopologyGraph({ status, cluster }: Props) {
   );
 }
 
-/* Faint ambient dot-field behind the node graph — reinforces "live mesh"
-   without competing with the node/link foreground. */
-function MeshBackdrop() {
-  return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none absolute inset-0 opacity-40"
-      style={{
-        backgroundImage: "radial-gradient(rgba(255,255,255,0.14) 1px, transparent 1.4px)",
-        backgroundSize: "22px 22px",
-        maskImage: "radial-gradient(ellipse 70% 80% at 50% 50%, #000 0%, transparent 100%)",
-        WebkitMaskImage:
-          "radial-gradient(ellipse 70% 80% at 50% 50%, #000 0%, transparent 100%)",
-      }}
-    />
-  );
-}
-
 function NodeBox({
   label,
   sub,
@@ -122,20 +102,20 @@ function NodeBox({
       initial={{ opacity: 0, scale: 0.94 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.3, ease: "easeOut" }}
-      className={`relative w-36 p-5 rounded-2xl border backdrop-blur-xl transition-colors duration-300 ${
+      className={`relative w-36 p-5 border transition-colors duration-300 ${
         active
           ? highlight
-            ? "border-hairline-strong bg-surface-card shadow-[0_0_0_1px_rgba(109,94,240,0.2),0_0_28px_-8px_rgba(109,94,240,0.45)]"
+            ? "border-m-blue-dark bg-surface-card"
             : "border-hairline-strong bg-surface-card"
           : "border-hairline bg-surface-soft"
       }`}
     >
       <span className="relative mb-3 flex h-2.5 w-2.5" aria-hidden="true">
         {active && highlight && (
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full m-stripe opacity-60" />
+          <span className="absolute inline-flex h-full w-full animate-ping m-stripe opacity-60" />
         )}
         <span
-          className={`relative inline-flex h-2.5 w-2.5 rounded-full ${
+          className={`relative inline-flex h-2.5 w-2.5 ${
             active ? (highlight ? "m-stripe" : "bg-body-strong") : "bg-hairline-strong"
           }`}
         />
@@ -159,19 +139,19 @@ function ConnectionLine({
 }) {
   return (
     <div className="flex flex-col items-center w-28 mx-2">
-      <div className="relative w-full h-[3px] rounded-full bg-hairline overflow-hidden">
+      <div className="relative w-full h-px bg-hairline overflow-hidden">
         {connected ? (
           <>
-            <div className="absolute inset-0 rounded-full m-stripe opacity-30" />
+            <div className="absolute inset-0 m-stripe opacity-30" />
             <motion.div
-              className="absolute inset-y-0 left-0 w-1/3 rounded-full m-stripe"
+              className="absolute inset-y-0 left-0 w-1/3 m-stripe"
               animate={{ x: ["-100%", "400%"] }}
               transition={{ repeat: Infinity, duration: 1.6, ease: "linear" }}
             />
           </>
         ) : (
           <motion.div
-            className="absolute inset-y-0 left-0 w-1/4 rounded-full bg-hairline-strong"
+            className="absolute inset-y-0 left-0 w-1/4 bg-hairline-strong"
             animate={{ x: ["-100%", "500%"] }}
             transition={{ repeat: Infinity, duration: 2.2, ease: "easeInOut" }}
           />

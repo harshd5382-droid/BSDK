@@ -37,9 +37,9 @@ export default function ConnectCoordinator({
 
   return (
     <div className="max-w-xl mx-auto">
-      <div className="flex items-center gap-3 mb-6">
-        <span className="relative inline-flex h-2.5 w-2.5 rounded-full m-stripe" aria-hidden="true" />
-        <span className="label-caps text-muted">Coordinator · Setup</span>
+      <div className="flex items-center gap-3 mb-8">
+        <span className="inline-flex h-px w-8 m-stripe" aria-hidden="true" />
+        <span className="label-caps text-muted">Setup / 02 / Coordinator</span>
       </div>
 
       <h2 className="display text-4xl md:text-5xl mb-4">Connect To Another PC</h2>

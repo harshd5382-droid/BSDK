@@ -258,15 +258,11 @@ function DownloadProgress({
             animate={{ width: `${percent}%` }}
             transition={{ duration: 0.5, ease: "easeOut" }}
           >
-            {/* Telemetry scan highlight sweeping across the filled track */}
+            {/* Flat telemetry scan; color-only to preserve the no-gradient system. */}
             {!reduced && (
               <motion.div
                 aria-hidden="true"
-                className="absolute inset-y-0 w-1/3"
-                style={{
-                  background:
-                    "linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent)",
-                }}
+                className="absolute inset-y-0 w-1/6 bg-on-dark opacity-40"
                 animate={{ x: ["-120%", "320%"] }}
                 transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
               />

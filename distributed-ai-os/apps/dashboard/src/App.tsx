@@ -62,6 +62,10 @@ export default function App() {
     }
   }, [status, step]);
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [step]);
+
   const handleStartCoordinator = useCallback(
     async (peerHost: string, modelPath: string, discovery: boolean) => {
       if (!system) return;
@@ -172,26 +176,33 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
-      <div className="hidden" aria-hidden="true" />
-      <header className="sticky top-0 z-50 h-16 px-6 flex items-center justify-between bg-canvas/60 backdrop-blur-xl border-b border-hairline">
-        <div className="flex items-center gap-3">
-          <span className="relative inline-flex h-2.5 w-2.5 rounded-full m-stripe" aria-hidden="true" />
-          <span
-            className="display text-lg leading-none"
-            title="Beyond Single Device Kernel"
-          >
-            BSDK
-          </span>
-          <span className="hidden md:inline text-[11px] tracking-[0.06em] text-muted font-body max-w-56 leading-tight">
-            Beyond Single Device Kernel
-          </span>
+      <a className="skip-link" href="#main-content">Skip to content</a>
+      <header className="sticky top-0 z-50 h-[72px] px-5 md:px-8 flex items-stretch justify-between bg-canvas border-b border-hairline">
+        <div className="flex items-center gap-4">
+          <span className="inline-flex h-3 w-3 m-stripe" aria-hidden="true" />
+          <div className="flex items-baseline gap-3">
+            <span
+              className="display text-xl leading-none tracking-[-0.04em]"
+              title="Beyond Single Device Kernel"
+            >
+              BSDK
+            </span>
+            <span className="hidden sm:inline label-caps text-[10px] text-muted">
+              Control plane
+            </span>
+          </div>
         </div>
-        <div className="text-xs text-body-strong font-display tracking-wide px-3 py-1.5 rounded-full bg-surface-card border border-hairline">
-          {system.lan_ip}
+        <div className="flex items-center border-l border-hairline pl-5 md:pl-8">
+          <div className="text-right">
+            <div className="label-caps text-[9px] text-muted mb-1">Local endpoint</div>
+            <div className="text-xs text-body-strong font-mono tabular-nums">
+              {system.lan_ip}
+            </div>
+          </div>
         </div>
       </header>
 
-      <main className="px-6 py-16 md:py-24">
+      <main id="main-content" className="px-5 py-12 md:px-8 md:py-16">
         <AnimatePresence mode="wait">
           <motion.div
             key={step}

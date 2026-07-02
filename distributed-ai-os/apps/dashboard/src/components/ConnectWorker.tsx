@@ -20,9 +20,9 @@ export default function ConnectWorker({
   const [autoDiscovery, setAutoDiscovery] = useState(true);
   return (
     <div className="max-w-xl mx-auto">
-      <div className="flex items-center gap-3 mb-6">
-        <span className="relative inline-flex h-2.5 w-2.5 rounded-full m-stripe" aria-hidden="true" />
-        <span className="label-caps text-muted">Worker · Setup</span>
+      <div className="flex items-center gap-3 mb-8">
+        <span className="inline-flex h-px w-8 m-stripe" aria-hidden="true" />
+        <span className="label-caps text-muted">Setup / 02 / Worker</span>
       </div>
 
       <h2 className="display text-4xl md:text-5xl mb-4">Share This PC's Power</h2>

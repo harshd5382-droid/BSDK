@@ -89,16 +89,16 @@ export default function LiveStatus({
   }, [apiUrl]);
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
+    <div className="max-w-6xl mx-auto">
+      <div className="flex flex-wrap items-end justify-between gap-6 mb-10 pb-8 border-b border-hairline">
         <div>
           <div className="flex items-center gap-3 mb-3">
-            <span className="relative inline-flex h-2.5 w-2.5 rounded-full m-stripe" aria-hidden="true" />
+            <span className="inline-flex h-px w-8 m-stripe" aria-hidden="true" />
             <span className="label-caps text-muted">
-              {isCoordinator ? "Coordinator" : "Worker"}
+              Live / {isCoordinator ? "Coordinator" : "Worker"}
             </span>
           </div>
-          <h2 className="display text-4xl md:text-5xl">Cluster Live</h2>
+          <h2 className="display text-4xl md:text-6xl">Cluster online</h2>
         </div>
         <div className="flex gap-3 flex-wrap">
           {versionLabel && (
@@ -143,7 +143,7 @@ export default function LiveStatus({
       >
         <TopologyGraph status={status} cluster={cluster} />
 
-        <div className="flex flex-wrap gap-2 my-6 justify-center">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-px my-6 bg-hairline border border-hairline">
           <StatusPill label="Node" ok={nodeOk} detail={status.node_state} />
           {isWorker ? (
             <StatusPill

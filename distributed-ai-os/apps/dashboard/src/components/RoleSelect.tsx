@@ -34,9 +34,9 @@ const WorkerIcon = (
 export default function RoleSelect({ onSelect, onBack }: Props) {
   return (
     <div className="max-w-4xl mx-auto">
-      <div className="flex items-center gap-3 mb-6">
-        <span className="relative inline-flex h-2.5 w-2.5 rounded-full m-stripe" aria-hidden="true" />
-        <span className="label-caps text-muted">Setup · Step 1</span>
+      <div className="flex items-center gap-3 mb-8">
+        <span className="inline-flex h-px w-8 m-stripe" aria-hidden="true" />
+        <span className="label-caps text-muted">Setup / 01 / Role</span>
       </div>
 
       <h2 className="display text-4xl md:text-5xl mb-4">
@@ -49,7 +49,7 @@ export default function RoleSelect({ onSelect, onBack }: Props) {
         on both.
       </p>
 
-      <div className="grid md:grid-cols-2 gap-6 mt-10 mb-10">
+      <div className="grid md:grid-cols-2 gap-px bg-hairline border border-hairline mt-10 mb-10">
         <RoleCard
           index={0}
           title="Run The AI Here"
@@ -102,12 +102,14 @@ function RoleCard({
       whileTap={{ scale: 0.99 }}
       whileHover={{ y: -2 }}
       onClick={onClick}
-      className="group cursor-pointer text-left bg-surface-soft border border-hairline hover:border-hairline-strong rounded-2xl p-6 backdrop-blur-xl transition-all duration-200 focus:outline-none focus:border-hairline-strong hover:shadow-[0_16px_40px_-16px_rgba(109,94,240,0.35)]"
+      className="group cursor-pointer text-left bg-surface-soft hover:bg-surface-card p-7 md:p-8 transition-colors duration-200 focus:outline-none"
     >
-      <span className="block h-1 w-10 rounded-full m-stripe mb-6 opacity-50 group-hover:w-full group-hover:opacity-100 transition-all duration-300" />
-      <div className="inline-flex items-center justify-center h-12 w-12 rounded-xl bg-surface-elevated border border-hairline text-on-dark mb-5">{icon}</div>
+      <div className="flex items-start justify-between mb-12">
+        <span className="label-caps text-[10px] text-muted">0{index + 1}</span>
+        <div className="inline-flex items-center justify-center h-12 w-12 border border-hairline text-m-blue-light">{icon}</div>
+      </div>
       <div className="display text-2xl mb-2">{title}</div>
-      <div className="label-caps text-[12px] text-muted mb-4">{subtitle}</div>
+      <div className="label-caps text-[11px] text-m-blue-light mb-4">{subtitle}</div>
       <p className="text-body text-sm font-light leading-relaxed">
         {description}
       </p>
