@@ -26,7 +26,7 @@ import sys
 import time
 from pathlib import Path
 
-from daios_launcher import artifacts, paths, prereqs, system_check
+from daios_launcher import artifacts, firewall_windows, paths, prereqs, system_check
 from daios_launcher.autostart_windows import install_task, is_windows, uninstall_task
 from daios_launcher.settings import LauncherSettings
 
@@ -77,15 +77,47 @@ def _setup_logging(token: str | None, log_name: str, verbose: bool = False) -> P
     fh = logging.FileHandler(log_path, encoding="utf-8")
     fh.setFormatter(fmt)
     fh.addFilter(redact)
-    ch = logging.StreamHandler()
-    ch.setFormatter(fmt)
-    ch.addFilter(redact)
     root.addHandler(fh)
-    root.addHandler(ch)
+    # The exe is windowed: in service mode there is no console and sys.stderr
+    # is None, so only mirror to a stream when one actually exists.
+    if sys.stderr is not None:
+        ch = logging.StreamHandler()
+        ch.setFormatter(fmt)
+        ch.addFilter(redact)
+        root.addHandler(ch)
     return log_path
 
 
 # ============================ double-click console ============================
+
+
+def _ensure_console() -> None:
+    """Give interactive modes (install/uninstall/--check) a console to print to.
+
+    The exe is built windowed so the background service never shows a window.
+    When run from a terminal we attach to it; when double-clicked we allocate a
+    fresh console. When output is already redirected (e.g. the remote-update
+    installer spawned detached with a log file), leave everything alone —
+    allocating a console there would flash a window on the worker PC.
+    """
+    if not is_windows() or not paths.is_frozen():
+        return
+    if sys.stdout is not None:
+        return  # already have a console or redirected output
+    import ctypes
+
+    kernel32 = ctypes.windll.kernel32
+    if kernel32.GetConsoleWindow():
+        return
+    attach_parent = ctypes.c_uint(-1).value  # ATTACH_PARENT_PROCESS
+    if not kernel32.AttachConsole(attach_parent) and not kernel32.AllocConsole():
+        return
+    try:
+        sys.stdout = open("CONOUT$", "w", buffering=1, encoding="utf-8", errors="replace")
+        sys.stderr = open("CONOUT$", "w", buffering=1, encoding="utf-8", errors="replace")
+        sys.stdin = open("CONIN$", "r", encoding="utf-8", errors="replace")
+    except OSError:
+        pass
 
 
 def _console_owned() -> bool:
@@ -223,6 +255,7 @@ def _spawn_service_detached(installed_exe: Path) -> subprocess.Popen:
         creationflags = (
             getattr(subprocess, "DETACHED_PROCESS", 0)
             | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            | getattr(subprocess, "CREATE_NO_WINDOW", 0)
         )
     log_handle = open(log_path, "ab")
     return subprocess.Popen(
@@ -280,7 +313,16 @@ def _copy_self_to_install(installed_exe: Path) -> None:
     installed_exe.parent.mkdir(parents=True, exist_ok=True)
     tmp = installed_exe.with_suffix(".exe.new")
     shutil.copy2(source, tmp)
-    os.replace(tmp, installed_exe)  # atomic on the same volume
+    # During a remote update the old service process (which spawned us) may
+    # still be exiting and holding the installed exe locked; retry briefly.
+    for attempt in range(10):
+        try:
+            os.replace(tmp, installed_exe)  # atomic on the same volume
+            return
+        except PermissionError:
+            if attempt == 9:
+                raise
+            time.sleep(1.0)
 
 
 def install_or_update(
@@ -358,7 +400,24 @@ def install_or_update(
         ok, msg = install_task(installed_exe)
         logger.info("Autostart task: %s (%s)", "ok" if ok else "failed", msg)
 
-    # 5. Start the worker now (detached so it outlives this installer).
+    # 5. Open Windows Firewall for inbound mDNS + API + RPC (idempotent; one UAC
+    #    prompt at most). Without this, coordinators cannot auto-discover this
+    #    worker and users end up typing IPs manually. Not fatal if declined.
+    if is_windows():
+        fw_ok, fw_msg = firewall_windows.ensure_rules(
+            installed_exe, paths.bin_dir() / "ggml-rpc-server.exe"
+        )
+        logger.info("Firewall rules: %s", "ok" if fw_ok else "NOT added")
+        if not fw_ok:
+            print(f"\n[WARN] {fw_msg}\n")
+        if firewall_windows.active_profile_is_public():
+            print(
+                "\n[WARN] This network is set to 'Public' in Windows, which blocks "
+                "LAN discovery. Set it to 'Private' (Settings > Network & internet > "
+                "Wi-Fi/Ethernet > Network profile type) for auto-discovery to work.\n"
+            )
+
+    # 6. Start the worker now (detached so it outlives this installer).
     if report.already_running:
         _stop_running_worker()
         time.sleep(1.0)
@@ -396,6 +455,8 @@ def uninstall(purge: bool) -> int:
     if is_windows():
         ok, msg = uninstall_task()
         logger.info("Autostart task removal: %s (%s)", "ok" if ok else "failed", msg)
+        fw_ok, fw_msg = firewall_windows.remove_rules()
+        logger.info("Firewall rules removal: %s (%s)", "ok" if fw_ok else "failed", fw_msg)
     if purge:
         root = paths.install_root()
         logger.info("Purging %s", root)
@@ -421,6 +482,7 @@ def _run(cmd: list[str], cwd: Path | None = None, timeout: float = 600.0) -> tup
     result = subprocess.run(
         cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True,
         timeout=timeout, check=False,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     return result.returncode, ((result.stdout or "") + (result.stderr or "")).strip()
 
@@ -524,6 +586,11 @@ def main() -> None:
 
     parser = _build_parser()
     args, _unknown = parser.parse_known_args()
+
+    # Interactive modes need a console (the exe is windowed); service mode must
+    # stay invisible, so only set one up when not running as the service.
+    if not (args.service or args.no_window):
+        _ensure_console()
 
     if args.check:
         report = system_check.check_system(paths.install_root())

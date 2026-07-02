@@ -42,9 +42,16 @@ def spawn_env(venv_bin: Path) -> dict[str, str]:
 
 
 def popen_kwargs() -> dict:
-    """Platform-specific kwargs for ``subprocess.Popen``."""
+    """Platform-specific kwargs for ``subprocess.Popen``.
+
+    ``CREATE_NO_WINDOW``: children write to log files, and console children of
+    a windowed parent (the frozen exe) would otherwise pop up console windows.
+    """
     if sys.platform == "win32":
-        return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+        return {
+            "creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        }
     return {"start_new_session": True}
 
 

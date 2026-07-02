@@ -50,7 +50,8 @@ def find_tool(*names: str) -> str | None:
 def _run(cmd: list[str], timeout: float = 30.0) -> tuple[int, str]:
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout, check=False
+            cmd, capture_output=True, text=True, timeout=timeout, check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         return result.returncode, ((result.stdout or "") + (result.stderr or "")).strip()
     except (OSError, subprocess.TimeoutExpired) as exc:

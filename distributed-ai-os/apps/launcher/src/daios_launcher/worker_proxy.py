@@ -145,13 +145,18 @@ async def stop_worker(http: httpx.AsyncClient, host: str, token: str | None) -> 
     return await forward_worker_launcher(http, host, token, "POST", "/stop")
 
 
-async def update_worker(http: httpx.AsyncClient, host: str, token: str | None) -> dict:
+async def update_worker(
+    http: httpx.AsyncClient,
+    host: str,
+    token: str | None,
+    extra: dict | None = None,
+) -> dict:
     return await forward_worker_launcher(
         http,
         host,
         token,
         "POST",
         "/update",
-        json_body={"reexec": True},
-        timeout=180.0,
+        json_body={"reexec": True, **(extra or {})},
+        timeout=300.0,
     )

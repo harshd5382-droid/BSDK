@@ -12,8 +12,11 @@ Set-Location $Root
 Write-Host "==> Building dashboard..."
 Push-Location (Join-Path $Root "apps\dashboard")
 try {
+    # Native exit codes don't throw under $ErrorActionPreference = "Stop"; check explicitly.
     npm install
+    if ($LASTEXITCODE -ne 0) { throw "npm install failed with exit code $LASTEXITCODE" }
     npm run build
+    if ($LASTEXITCODE -ne 0) { throw "npm run build failed with exit code $LASTEXITCODE" }
 } finally {
     Pop-Location
 }

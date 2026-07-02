@@ -13,12 +13,19 @@ param(
 $ErrorActionPreference = "Stop"
 Set-Location $Root
 
+# $ErrorActionPreference = "Stop" does not fire on native exe exit codes; check explicitly.
+function Assert-LastExitCode([string]$What) {
+    if ($LASTEXITCODE -ne 0) { throw "$What failed with exit code $LASTEXITCODE" }
+}
+
 $python = (Get-Command python -ErrorAction SilentlyContinue).Source
 if (-not $python) { Write-Error "Python 3.11+ is required to build the exe." }
 
 Write-Host "==> Installing BSDK packages (all three) + PyInstaller..."
 & $python -m pip install -e packages/protocol -e apps/node -e apps/launcher
+Assert-LastExitCode "pip install (BSDK packages)"
 & $python -m pip install pyinstaller
+Assert-LastExitCode "pip install pyinstaller"
 
 # Stage prebuilt native binaries for bundling, if provided.
 $pkgBin = Join-Path $Root "packaging\windows\bin"
@@ -37,8 +44,12 @@ if ($BinDir) {
 }
 
 Write-Host "==> Building daios-worker.exe..."
-$cleanArg = if ($Clean) { "--clean" } else { "" }
-& $python -m PyInstaller packaging/windows/daios-worker.spec --noconfirm $cleanArg
+# Use an array: on PowerShell 7.3+ an empty-string arg is passed literally and
+# PyInstaller's argparse rejects it as a stray positional.
+$extraArgs = @()
+if ($Clean) { $extraArgs += "--clean" }
+& $python -m PyInstaller packaging/windows/daios-worker.spec --noconfirm @extraArgs
+Assert-LastExitCode "PyInstaller"
 
 $dist = Join-Path $Root "dist\daios-worker.exe"
 if (Test-Path $dist) {

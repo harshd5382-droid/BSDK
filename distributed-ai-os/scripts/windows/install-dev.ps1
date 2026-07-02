@@ -32,7 +32,9 @@ if ($uv) {
     & $venvPython -m pip install -e "$Root\apps\launcher"
     & $venvPython -m pip install -e "$Root\packages\protocol"
     & $venvPython -m pip install pytest pytest-asyncio httpx ruff
-    try { & $venvPython -m pip install zeroconf } catch { Write-Warning "zeroconf install failed (mDNS discovery unavailable)" }
+    # Native exit codes don't throw under $ErrorActionPreference = "Stop"; check explicitly.
+    & $venvPython -m pip install zeroconf
+    if ($LASTEXITCODE -ne 0) { Write-Warning "zeroconf install failed (mDNS discovery unavailable)" }
 }
 
 Write-Host "Installed daios-protocol, daios-node, and daios-launcher into $venv"

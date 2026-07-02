@@ -43,6 +43,7 @@ export interface WorkerRemoteStatus {
   error: string | null;
   remote_control?: "launcher" | "node_only";
   api_port?: number;
+  exe_sha256?: string | null;
 }
 
 export interface LauncherStatus {
@@ -94,6 +95,7 @@ export interface ClusterStatus {
   local_model_usage: ModelUsage | null;
   coordinator_ip: string | null;
   membership?: MembershipView | null;
+  paused_workers?: string[];
 }
 
 export interface MemberInfo {

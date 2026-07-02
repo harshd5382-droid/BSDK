@@ -43,6 +43,7 @@ def _run(cmd: list[str], cwd: Path, timeout: float = 300.0) -> tuple[int, str]:
             text=True,
             timeout=timeout,
             check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         output = (result.stdout or "") + (result.stderr or "")
         return result.returncode, output.strip()

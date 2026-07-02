@@ -78,6 +78,7 @@ def _has_nvidia_gpu() -> bool:
             capture_output=True,
             timeout=2,
             check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         return result.returncode == 0
     except (OSError, subprocess.TimeoutExpired):

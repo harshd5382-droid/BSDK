@@ -49,11 +49,15 @@ class ManagedProcess:
                 stdout = subprocess.DEVNULL
 
             logger.info("Starting %s: %s", self.name, " ".join(self.command))
+            # CREATE_NO_WINDOW: output goes to the log file; without it a console
+            # child (llama-server / ggml-rpc-server) of a windowed parent pops up
+            # its own console window on Windows.
             self.process = subprocess.Popen(
                 self.command,
                 env={**os.environ, **self.env},
                 stdout=stdout,
                 stderr=subprocess.STDOUT,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             time.sleep(0.5)
             if self.process.poll() is not None:
@@ -180,6 +184,7 @@ class InferenceManager:
             os.environ.get("DAIOS_LOG_DIR", Path(tempfile.gettempdir()) / "daios-logs")
         )
         self._peer_hosts: list[str] | None = None
+        self._excluded_hosts: set[str] = set()
 
     def _log_path(self, name: str) -> Path:
         return self._log_dir / f"{self.config.node_id}-{name}.log"
@@ -189,6 +194,26 @@ class InferenceManager:
         if hosts == self._peer_hosts:
             return
         self._peer_hosts = hosts
+        self._restart_llama_if_running()
+
+    def set_excluded_hosts(self, hosts: set[str]) -> None:
+        """Exclude worker hosts from the RPC pool (temporary disconnect).
+
+        The workers stay up and remain cluster members; their memory just isn't
+        pooled. Applies to both static (Gen 1) and discovered (Gen 2) peers.
+        Restarts llama-server if the exclusion set changes while it is running.
+        """
+        if hosts == self._excluded_hosts:
+            return
+        self._excluded_hosts = set(hosts)
+        self._restart_llama_if_running()
+
+    def rpc_endpoints_effective(self) -> list[str]:
+        """The RPC endpoints llama-server would be started with right now."""
+        endpoints = self.config.rpc_endpoints(self._peer_hosts)
+        return [ep for ep in endpoints if ep.rsplit(":", 1)[0] not in self._excluded_hosts]
+
+    def _restart_llama_if_running(self) -> None:
         if self.config.runs_coordinator and self.config.inference.backend != "mock":
             if self.llama_server and self.llama_server.state == ProcessState.RUNNING:
                 self.llama_server.stop()
@@ -297,7 +322,7 @@ class InferenceManager:
         # Single slot avoids parallel requests competing for CPU/RPC bandwidth.
         cmd.extend(["-np", "1", "--cont-batching", "--mlock"])
 
-        rpc_endpoints = self.config.rpc_endpoints(self._peer_hosts)
+        rpc_endpoints = self.rpc_endpoints_effective()
         if rpc_endpoints:
             cmd.extend(["--rpc", ",".join(rpc_endpoints)])
         if inf.tensor_split:

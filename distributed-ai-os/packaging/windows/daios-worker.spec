@@ -38,6 +38,8 @@ hiddenimports = [
     "daios_launcher.settings",
     "daios_launcher.update",
     "daios_launcher.autostart_windows",
+    "daios_launcher.firewall_windows",
+    "daios_launcher.exe_update",
     "daios_launcher.platform_utils",
     "daios_launcher.paths",
     "daios_launcher.system_check",
@@ -83,7 +85,10 @@ exe = EXE(
     upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    # Windowed: the background service must never show a console. Interactive
+    # modes (install/uninstall/--check) attach or allocate one at runtime — see
+    # bootstrap._ensure_console().
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

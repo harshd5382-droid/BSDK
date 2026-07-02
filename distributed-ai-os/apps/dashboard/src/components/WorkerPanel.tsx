@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "motion/react";
 import {
+  getWorkerExeInfo,
   getWorkerStatus,
+  getWorkerVersion,
+  pauseWorker,
+  resumeWorker,
   startWorker,
   stopWorker,
   updateWorker,
@@ -27,6 +31,14 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
   const [workers, setWorkers] = useState<WorkerRemoteStatus[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [localExeSha, setLocalExeSha] = useState<string | null>(null);
+
+  useEffect(() => {
+    getWorkerExeInfo()
+      .then((info) => setLocalExeSha(info?.sha256 ?? null))
+      .catch(() => setLocalExeSha(null));
+  }, []);
 
   const discoverWorkers = useCallback(async () => {
     if (!clusterToken) return;
@@ -53,6 +65,12 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
       [...hosts.entries()].map(async ([host, apiPort]) => {
         try {
           const status = await getWorkerStatus(host, apiPort);
+          let exeSha: string | null = null;
+          if (status.remote_control === "launcher") {
+            exeSha = await getWorkerVersion(host)
+              .then((v) => v.exe_sha256 ?? null)
+              .catch(() => null);
+          }
           results.push({
             host,
             launcher: status.launcher,
@@ -61,6 +79,7 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
             error: null,
             remote_control: status.remote_control,
             api_port: apiPort,
+            exe_sha256: exeSha,
           });
         } catch (e) {
           results.push({
@@ -83,15 +102,28 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
     return () => clearInterval(id);
   }, [discoverWorkers]);
 
-  const runAction = async (host: string, action: "stop" | "start" | "update") => {
+  const runAction = async (
+    host: string,
+    action: "stop" | "start" | "update" | "pause" | "resume",
+  ) => {
     if (!clusterToken) {
       setError("Cluster token not configured on this coordinator");
       return;
     }
     setBusy(host);
     setError(null);
+    setNotice(null);
     try {
-      if (action === "stop") {
+      if (action === "pause") {
+        await pauseWorker(host);
+        setNotice(
+          `${host} disconnected — its resources are no longer pooled. ` +
+            "The worker keeps running and can be reconnected anytime.",
+        );
+      } else if (action === "resume") {
+        await resumeWorker(host);
+        setNotice(`${host} reconnected — its resources are pooled again.`);
+      } else if (action === "stop") {
         await stopWorker(host);
       } else if (action === "start") {
         await startWorker(host, {
@@ -102,7 +134,15 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
           discovery_enabled: true,
         });
       } else {
-        await updateWorker(host);
+        const result = (await updateWorker(host)) as {
+          restarting?: boolean;
+          up_to_date?: boolean;
+        };
+        if (result?.up_to_date) {
+          setNotice(`${host} is already up to date.`);
+        } else if (result?.restarting) {
+          setNotice(`${host} is installing the update and restarting — it will reappear shortly.`);
+        }
       }
       await discoverWorkers();
     } catch (e) {
@@ -139,14 +179,23 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
             {error}
           </div>
         )}
+        {notice && (
+          <div className="mb-3 text-sm text-muted border-l-2 border-hairline pl-3">
+            {notice}
+          </div>
+        )}
         <ul className="space-y-3">
           {workers.map((w) => {
             const remoteOk = w.remote_control === "launcher";
+            const paused = (cluster?.paused_workers ?? []).includes(w.host.split(":")[0]);
+            const updateAvailable = Boolean(
+              localExeSha && w.exe_sha256 && localExeSha !== w.exe_sha256,
+            );
             const statusLine = w.error
               ? w.error
               : w.remote_control === "node_only"
                 ? `${w.node_state ?? "unknown"} · ${w.role ?? "worker"} · node only (launcher offline)`
-                : `${w.node_state ?? "unknown"} · ${w.role ?? "worker"}`;
+                : `${w.node_state ?? "unknown"} · ${w.role ?? "worker"}${paused ? " · disconnected (not pooled)" : ""}${updateAvailable ? " · update available" : ""}`;
 
             return (
               <li
@@ -165,6 +214,22 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
                   )}
                 </div>
                 <div className="flex gap-2">
+                  <motion.button
+                    whileTap={{ scale: 0.97 }}
+                    type="button"
+                    disabled={busy === w.host}
+                    title={
+                      paused
+                        ? "Resume pooling this worker's resources (reloads the model)"
+                        : "Stop pooling this worker's resources — the worker keeps running"
+                    }
+                    onClick={() => runAction(w.host, paused ? "resume" : "pause")}
+                    className={`cursor-pointer label-caps text-[10px] border px-2 py-1 min-h-[32px] disabled:opacity-40 ${
+                      paused ? "border-m-red text-m-red" : "border-hairline"
+                    }`}
+                  >
+                    {paused ? "Reconnect" : "Disconnect"}
+                  </motion.button>
                   <motion.button
                     whileTap={{ scale: 0.97 }}
                     type="button"
@@ -199,13 +264,17 @@ export default function WorkerPanel({ cluster, clusterToken, localLanIp }: Props
                     disabled={busy === w.host || !remoteOk}
                     title={
                       remoteOk
-                        ? "Update worker software"
+                        ? updateAvailable
+                          ? "New build available — push it to this worker"
+                          : "Update worker software"
                         : "Worker launcher offline — start dashboard on worker PC"
                     }
                     onClick={() => runAction(w.host, "update")}
-                    className="cursor-pointer label-caps text-[10px] border border-hairline px-2 py-1 min-h-[32px] disabled:opacity-40"
+                    className={`cursor-pointer label-caps text-[10px] border px-2 py-1 min-h-[32px] disabled:opacity-40 ${
+                      updateAvailable ? "border-m-red text-m-red" : "border-hairline"
+                    }`}
                   >
-                    Update
+                    {updateAvailable ? "Update ●" : "Update"}
                   </motion.button>
                 </div>
               </li>

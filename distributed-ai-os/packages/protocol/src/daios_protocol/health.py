@@ -148,3 +148,5 @@ class ClusterStatus(BaseModel):
     local_model_usage: ModelUsage | None = None
     coordinator_ip: str | None = None
     membership: MembershipView | None = None
+    # Worker hosts temporarily excluded from the RPC pool (still cluster members).
+    paused_workers: list[str] = Field(default_factory=list)

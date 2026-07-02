@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 TASK_NAME = "DAIOS Worker"
 SERVICE_FLAG = "--service"
 
+# Hide the schtasks console window when called from the windowed exe.
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 
 def is_windows() -> bool:
     return sys.platform == "win32"
@@ -38,6 +41,7 @@ def current_task_command() -> str | None:
         capture_output=True,
         text=True,
         check=False,
+        creationflags=_NO_WINDOW,
     )
     if result.returncode != 0:
         return None
@@ -78,7 +82,9 @@ def install_task(exe_path: Path) -> tuple[bool, str]:
         "LIMITED",
         "/F",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, check=False, creationflags=_NO_WINDOW
+    )
     if result.returncode != 0:
         return False, (result.stderr or result.stdout or "schtasks failed").strip()
     return True, "Task installed" if existing is None else "Task updated"
@@ -92,6 +98,7 @@ def uninstall_task() -> tuple[bool, str]:
         capture_output=True,
         text=True,
         check=False,
+        creationflags=_NO_WINDOW,
     )
     if result.returncode != 0 and "cannot find" not in (result.stderr or "").lower():
         return False, (result.stderr or result.stdout or "schtasks failed").strip()
@@ -106,5 +113,6 @@ def task_installed() -> bool:
         capture_output=True,
         text=True,
         check=False,
+        creationflags=_NO_WINDOW,
     )
     return result.returncode == 0
