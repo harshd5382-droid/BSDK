@@ -12,8 +12,10 @@ import sys
 import tempfile
 import threading
 import time
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from daios_protocol.config import NodeConfig
 from daios_protocol.health import InferenceStatus, ProcessState
@@ -185,6 +187,9 @@ class InferenceManager:
         )
         self._peer_hosts: list[str] | None = None
         self._excluded_hosts: set[str] = set()
+        self._restart_timestamps: dict[str, deque[float]] = defaultdict(deque)
+        self._restart_backoff: dict[str, float] = {}
+        self._restart_window_seconds = 600.0
 
     def _log_path(self, name: str) -> Path:
         return self._log_dir / f"{self.config.node_id}-{name}.log"
@@ -245,6 +250,8 @@ class InferenceManager:
             self._mock_rpc.stop()
             self._mock_rpc = None
         self._started_at = None
+        self._restart_timestamps.clear()
+        self._restart_backoff.clear()
 
     def status(self) -> InferenceStatus:
         llama_state = ProcessState.STOPPED
@@ -276,6 +283,55 @@ class InferenceManager:
         if self._started_at is None:
             return 0.0
         return time.monotonic() - self._started_at
+
+    def ensure_running(self) -> None:
+        """Refresh states and attempt bounded auto-restarts."""
+        if self.config.inference.backend == "mock":
+            return
+        if self.config.inference.auto_restart is False:
+            return
+
+        if self.rpc_server:
+            self._ensure_process_running(
+                self.rpc_server,
+                self._start_rpc_server,
+                should_run=self.config.runs_rpc_server,
+            )
+        if self.llama_server:
+            self._ensure_process_running(
+                self.llama_server,
+                self._start_llama_server,
+                should_run=self.config.runs_coordinator,
+            )
+
+    def _ensure_process_running(
+        self, proc: ManagedProcess, start_fn: Callable[[], None], *, should_run: bool
+    ) -> None:
+        if not should_run:
+            return
+        state = proc.refresh_state()
+        if state != ProcessState.FAILED:
+            return
+
+        now = time.monotonic()
+        history = self._restart_timestamps[proc.name]
+        while history and now - history[0] > self._restart_window_seconds:
+            history.popleft()
+
+        if len(history) >= self.config.inference.max_restarts:
+            proc.last_error = (
+                f"{proc.name} exceeded restart budget "
+                f"({self.config.inference.max_restarts} in 10 minutes): {proc.last_error or 'unknown'}"
+            )
+            logger.error(proc.last_error)
+            return
+
+        backoff = self._restart_backoff.get(proc.name, 0.5)
+        logger.warning("Restarting %s after failure (backoff %.2fs)", proc.name, backoff)
+        time.sleep(backoff)
+        start_fn()
+        history.append(time.monotonic())
+        self._restart_backoff[proc.name] = min(backoff * 2, 30.0)
 
     def _start_rpc_server(self) -> None:
         inf = self.config.inference

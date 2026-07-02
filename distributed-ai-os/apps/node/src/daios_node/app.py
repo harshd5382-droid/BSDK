@@ -54,6 +54,7 @@ class NodeApp:
             self.discovery,
             self.coordinator_registry,
             model_usage_fn=self._local_model_usage,
+            queue_depth_fn=lambda: 0,
         )
         self._http_client: httpx.AsyncClient | None = None
         self._last_coordinator_ping: float = 0.0
@@ -93,6 +94,8 @@ class NodeApp:
             discovery_task = asyncio.create_task(self.discovery.run_loop())
             membership_task = asyncio.create_task(self.membership.run())
             self._bg_tasks = [discovery_task, membership_task]
+        if self.config.inference.backend != "mock" and self.config.inference.auto_restart:
+            self._bg_tasks.append(asyncio.create_task(self._inference_recovery_loop()))
 
         logger.info(
             "Node %s started (role=%s, backend=%s, discovery=%s)",
@@ -297,6 +300,14 @@ class NodeApp:
 
         return app
 
+    async def _inference_recovery_loop(self) -> None:
+        while True:
+            try:
+                self.inference.ensure_running()
+            except Exception:  # pragma: no cover - safety guard for background task
+                logger.exception("Inference recovery loop failed")
+            await asyncio.sleep(5.0)
+
     def _mount_openai_proxy(self, app: FastAPI) -> None:
         base = f"http://127.0.0.1:{self.config.inference.llama_server_port}"
 
@@ -334,21 +345,20 @@ class NodeApp:
             }
 
             self.inference_tracker.begin()
+            wants_stream = self._wants_stream(request, body)
             try:
-                if self._wants_stream(request, body):
+                if wants_stream:
                     return await self._proxy_stream(url, headers, body, request_id)
 
                 try:
-                    response = await self._http_client.request(
-                        request.method,
-                        url,
-                        headers=headers,
-                        content=body,
+                    response = await self._request_with_recovery(
+                        request.method, url, headers=headers, content=body
                     )
                 except httpx.ConnectError as exc:
                     raise HTTPException(
                         status_code=503,
                         detail=f"llama-server unavailable on port {self.config.inference.llama_server_port}: {exc}",
+                        headers={"Retry-After": "2"},
                     ) from exc
 
                 return Response(
@@ -358,7 +368,7 @@ class NodeApp:
                     media_type=response.headers.get("content-type"),
                 )
             finally:
-                if not self._wants_stream(request, body):
+                if not wants_stream:
                     self.inference_tracker.end()
                     if request_id:
                         self.coordinator_registry.complete_lease(request_id)
@@ -391,15 +401,25 @@ class NodeApp:
         request = self._http_client.build_request("POST", url, headers=headers, content=body)
 
         async def event_stream():
+            got_first_chunk = False
             try:
-                async with self._http_client.stream(
-                    request.method,
-                    request.url,
-                    headers=request.headers,
-                    content=body,
-                ) as response:
-                    async for chunk in response.aiter_bytes():
-                        yield chunk
+                for attempt in range(3):
+                    try:
+                        async with self._http_client.stream(
+                            request.method,
+                            request.url,
+                            headers=request.headers,
+                            content=body,
+                        ) as response:
+                            async for chunk in response.aiter_bytes():
+                                got_first_chunk = True
+                                yield chunk
+                            return
+                    except httpx.ConnectError:
+                        if got_first_chunk or attempt >= 2:
+                            raise
+                        self.inference.ensure_running()
+                        await asyncio.sleep(0.25 if attempt == 0 else 0.75)
             except httpx.ConnectError as exc:
                 msg = json.dumps(
                     {"error": {"message": f"llama-server unavailable: {exc}", "type": "inference_error"}}
@@ -411,3 +431,21 @@ class NodeApp:
                     self.coordinator_registry.complete_lease(request_id)
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+    async def _request_with_recovery(
+        self, method: str, url: str, headers: dict[str, str], content: bytes
+    ) -> httpx.Response:
+        if not self._http_client:
+            raise RuntimeError("Node HTTP client is not initialized")
+        last_exc: httpx.ConnectError | None = None
+        for attempt in range(3):
+            try:
+                return await self._http_client.request(method, url, headers=headers, content=content)
+            except httpx.ConnectError as exc:
+                last_exc = exc
+                if attempt >= 2:
+                    break
+                self.inference.ensure_running()
+                await asyncio.sleep(0.25 if attempt == 0 else 0.75)
+        assert last_exc is not None
+        raise last_exc

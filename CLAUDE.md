@@ -25,7 +25,10 @@ use the PowerShell equivalents instead:
 
 Run tests/lint on Windows directly through the venv: `.venv\Scripts\python.exe -m pytest tests\ -q` and
 `.venv\Scripts\python.exe -m ruff check packages\ apps\node apps\launcher tests\ benchmarks\`. The full suite
-(73 tests, mock-backend integration included) passes on Windows.
+(135 tests, including recovery and mock-backend integration) passes on Windows.
+
+CI/CD: GitHub Actions is defined at `../.github/workflows/ci.yml` for Ubuntu/Windows Python checks and
+dashboard build validation.
 
 ```bash
 make install                 # uv (preferred) or pip — installs the 3 editable packages + dev deps

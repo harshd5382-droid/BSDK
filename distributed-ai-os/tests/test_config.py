@@ -89,3 +89,19 @@ def test_load_discovered_coordinator_config():
     config = load_config(discovered / "coordinator-mdns.yaml")
     assert config.discovery.enabled is True
     assert config.discovery.cluster_name == "daios-home"
+
+
+def test_load_all_example_yamls_backwards_compatible():
+    root = Path(__file__).resolve().parents[1] / "examples"
+    for yaml_path in root.rglob("*.yaml"):
+        loaded = load_config(yaml_path)
+        assert loaded.node_id
+        assert loaded.role in NodeRole
+
+
+def test_scheduler_and_inference_restart_defaults():
+    config = NodeConfig.model_validate({"node_id": "defaults", "role": "worker"})
+    assert config.inference.auto_restart is True
+    assert config.inference.max_restarts == 5
+    assert config.scheduler.enabled is False
+    assert config.scheduler.max_concurrent == 1

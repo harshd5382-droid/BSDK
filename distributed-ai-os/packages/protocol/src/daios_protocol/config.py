@@ -83,6 +83,8 @@ class InferenceConfig(BaseModel):
     context_size: int = 0  # 0 = use model native context (llama.cpp default)
     threads: int | None = None
     rpc_cache: bool = False
+    auto_restart: bool = True
+    max_restarts: int = 5
     extra_args: list[str] = Field(default_factory=list)
 
     @field_validator("backend")
@@ -106,6 +108,7 @@ class NodeConfig(BaseModel):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     membership: MembershipConfig = Field(default_factory=MembershipConfig)
     resource_caps: ResourceCapsConfig = Field(default_factory=ResourceCapsConfig)
+    scheduler: "SchedulerConfig" = Field(default_factory=lambda: SchedulerConfig())
 
     @property
     def runs_rpc_server(self) -> bool:
@@ -142,3 +145,16 @@ def load_config(path: str | Path) -> NodeConfig:
     config_path = Path(path)
     raw: dict[str, Any] = yaml.safe_load(config_path.read_text()) or {}
     return NodeConfig.model_validate(raw)
+
+
+class SchedulerConfig(BaseModel):
+    """Generation 3 scheduling configuration (feature-flagged)."""
+
+    enabled: bool = False
+    steal_interval: float = 2.0
+    max_queue_depth: int = 100
+    interactive_weight: float = 4.0
+    background_weight: float = 1.0
+    default_tenant_weight: float = 1.0
+    max_concurrent: int = 1
+    tenant_weights: dict[str, float] = Field(default_factory=dict)
