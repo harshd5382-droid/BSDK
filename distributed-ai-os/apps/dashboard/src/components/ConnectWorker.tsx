@@ -21,7 +21,7 @@ export default function ConnectWorker({
   return (
     <div className="max-w-xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
-        <span className="h-4 w-1.5 m-stripe" aria-hidden="true" />
+        <span className="relative inline-flex h-2.5 w-2.5 rounded-full m-stripe" aria-hidden="true" />
         <span className="label-caps text-muted">Worker · Setup</span>
       </div>
 
@@ -33,16 +33,16 @@ export default function ConnectWorker({
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-surface-soft border border-hairline mb-8"
+        className="bg-surface-soft border border-hairline rounded-2xl mb-8 backdrop-blur-xl overflow-hidden"
       >
-        <div className="h-1 w-full m-stripe" aria-hidden="true" />
+        <div className="h-1 w-full m-stripe opacity-70" aria-hidden="true" />
         <div className="px-8 py-10">
-          <label className="flex items-center gap-3 cursor-pointer mb-6 bg-surface-card border border-hairline px-4 py-3">
+          <label className="flex items-center gap-3 cursor-pointer mb-6 bg-surface-card border border-hairline rounded-xl px-4 py-3 backdrop-blur-xl">
             <input
               type="checkbox"
               checked={autoDiscovery}
               onChange={(e) => setAutoDiscovery(e.target.checked)}
-              className="w-4 h-4 accent-m-blue-dark"
+              className="w-4 h-4 accent-m-blue-dark rounded"
             />
             <span className="text-sm font-light text-body">
               <span className="text-on-dark">Auto Discovery</span> —{" "}
@@ -67,7 +67,7 @@ export default function ConnectWorker({
         </div>
       </motion.div>
 
-      <div className="bg-surface-soft border border-hairline px-5 py-4 text-sm font-light text-body mb-10">
+      <div className="bg-surface-soft border border-hairline rounded-2xl px-5 py-4 text-sm font-light text-body mb-10 backdrop-blur-xl">
         {autoDiscovery ? (
           <>
             <span className="text-on-dark">Steps on the other PC:</span>
@@ -99,7 +99,7 @@ export default function ConnectWorker({
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="mb-6 bg-surface-soft border-l-2 border-m-red px-4 py-3 text-sm font-light text-body-strong"
+          className="mb-6 bg-surface-soft border-l-2 border-m-red rounded-xl px-4 py-3 text-sm font-light text-body-strong backdrop-blur-xl"
         >
           {error}
         </motion.div>

@@ -43,13 +43,24 @@ distributed-ai-os/
 
 The easiest way to start — open a browser, pick your role, enter the other PC's IP, click Start.
 
+**Linux / macOS:**
+
 ```bash
 cd distributed-ai-os
 chmod +x scripts/run-dashboard.sh
 make dashboard
 ```
 
-This builds the React dashboard and opens `http://127.0.0.1:8090`.
+**Windows (PowerShell — no `make`/`bash` needed):**
+
+```powershell
+cd distributed-ai-os
+.\scripts\windows\run-dashboard.ps1
+```
+
+Both build the React dashboard and open `http://127.0.0.1:8090`. On Windows,
+`scripts\windows\install-dev.ps1` sets up the `.venv` (mirrors `make install`).
+The steps below say `make dashboard`; on Windows substitute `.\scripts\windows\run-dashboard.ps1`.
 
 **Two PCs over LAN (manual peer IP):**
 1. On **PC B** (worker): run `make dashboard` → choose **Help another PC** → **Start Worker** → share the displayed IP (`192.168.x.x:50052`).
@@ -234,37 +245,68 @@ flowchart LR
 
 See [Generation 2 architecture](docs/architecture-gen2.md) for full sequence diagrams.
 
-## Windows Worker (.exe)
+## Windows Worker (.exe) — zero-prerequisite installer
 
-Ship worker PCs as a self-updating Windows agent. Workers contribute compute (RPC only); the **coordinator** downloads and loads GGUF models.
+`daios-worker.exe` is a **self-contained, one-click installer**. On a fresh Windows
+10/11 **x64** PC with **no Git and no Python**, a user double-clicks it and gets a real
+running GGML RPC worker that auto-starts at login. Workers contribute compute (RPC
+only); the **coordinator** downloads and loads GGUF models.
 
-### Build the worker bootstrapper (on Windows)
+### Worker quick start (end user)
+
+1. **Double-click `daios-worker.exe`.** It runs a system check (Windows version, x64,
+   RAM, disk, network, ports), installs per-user under `%LOCALAPPDATA%\BSDK` (no admin
+   needed), materializes a **verified** `ggml-rpc-server.exe`, starts the worker
+   (role `worker`, Auto Discovery, API `8001`, RPC `50052`, launcher `8090`, bound to
+   the LAN), and registers a **Task Scheduler** job (`DAIOS Worker`) to auto-start at
+   login.
+2. The worker is reachable at `http://<LAN-IP>:8001/health` and the control API at
+   `http://<LAN-IP>:8090` (token-protected for non-localhost). It appears automatically
+   through BSDK discovery on the coordinator.
+3. **Running it again repairs/updates** the install (atomic; settings preserved; a
+   failed update leaves the previous worker usable) — no duplicate tasks.
+
+Detailed logs are written to `%LOCALAPPDATA%\BSDK\logs` (the cluster token is redacted).
+On a failed double-click the console stays open so the error is readable.
+
+Pair the worker with the coordinator's cluster token via any of:
+
+```powershell
+daios-worker.exe --token <CLUSTER_TOKEN>      # explicit
+$env:DAIOS_CLUSTER_TOKEN = "<CLUSTER_TOKEN>"  # environment
+# or omit it — the first run generates and persists a token
+```
+
+Other commands:
+
+```powershell
+daios-worker.exe --check                 # print the system report and exit
+daios-worker.exe --uninstall             # stop worker + remove autostart (keeps data)
+daios-worker.exe --uninstall --purge     # also delete %LOCALAPPDATA%\BSDK
+daios-worker.exe --dev                   # legacy Git+venv developer install
+```
+
+Unsupported systems (non-Windows, ARM, Windows < 10) get a clear error and exit
+without installing. The installer **never** falls back to the mock backend when the
+real RPC binary is missing — it fails loudly with instructions.
+
+### Build the installer (maintainer)
 
 ```powershell
 cd distributed-ai-os
-.\scripts\windows\build-exe.ps1
+# (optional) build the native RPC binaries first to bundle them for offline installs:
+.\scripts\windows\build-llama-cpp.ps1 -InstallDir .\packaging\windows\bin
+# build the self-contained exe (bundles Python + all 3 BSDK packages + binaries-if-present):
+.\scripts\windows\build-exe.ps1            # or: build-exe.ps1 -BinDir <dir-with-ggml-rpc-server.exe>
 # Output: dist\daios-worker.exe
 ```
 
-Prerequisites on worker PCs: **Git**, **Python 3.11+** (install via `winget install Git.Git` and `winget install Python.Python.3.12`).
-
-Optional — build llama.cpp RPC binaries:
-
-```powershell
-.\scripts\windows\build-llama-cpp.ps1 -InstallDir "$env:LOCALAPPDATA\BSDK\distributed-ai-os\.venv\Scripts"
-```
-
-### Worker quick start
-
-1. Run `daios-worker.exe` once (or double-click). It clones/updates the repo to `%LOCALAPPDATA%\BSDK`, installs Python deps, and starts as **worker** with **Auto Discovery**.
-2. On first run it registers a **Task Scheduler** job (`DAIOS Worker`) to auto-start at logon.
-3. The worker exposes its launcher API on `http://<LAN-IP>:8090` (token-protected for non-localhost).
-
-Uninstall auto-start:
-
-```powershell
-daios-worker.exe --uninstall
-```
+**Release artifacts.** If you do not bundle the native binaries at build time, the
+installer downloads them at runtime and **verifies SHA-256**. Publish the
+`ggml-rpc-server` Windows x64 zip and fill in its URL + checksum in
+[`packaging/windows/binaries-manifest.json`](packaging/windows/binaries-manifest.json)
+(replace `REPLACE_WITH_RELEASE_SHA256`). Until that is published *and* no binaries are
+bundled, the installer refuses to run (it will not use an unverified or mock backend).
 
 ### Coordinator: model manager + remote workers
 

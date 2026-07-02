@@ -12,6 +12,7 @@ from typing import AsyncIterator
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
+from pydantic import BaseModel
 
 from daios_protocol.config import NodeConfig
 from daios_protocol.health import ClusterStatus, ModelUsage, NodeHealth, ProcessState
@@ -37,6 +38,10 @@ def _is_loopback(ip: str) -> bool:
     return ip.startswith("127.") or ip in ("::1", "localhost", "0.0.0.0")
 
 
+class WorkerPauseRequest(BaseModel):
+    host: str
+
+
 class NodeApp:
     def __init__(self, config: NodeConfig) -> None:
         self.config = config
@@ -54,6 +59,9 @@ class NodeApp:
         self._last_coordinator_ping: float = 0.0
         self._coordinator_ip: str | None = None
         self._bg_tasks: list[asyncio.Task] = []
+        # Worker hosts temporarily excluded from the RPC pool ("disconnected" in
+        # the dashboard). In-memory: a node restart reconnects everyone.
+        self._paused_hosts: set[str] = set()
 
     def _local_model_usage(self) -> ModelUsage:
         inbound = (
@@ -158,6 +166,32 @@ class NodeApp:
                 "active_coordinator_leases": len(self.coordinator_registry.active_leases()),
             }
 
+        @app.get("/api/v1/workers/paused")
+        async def paused_workers():
+            if not self.config.runs_coordinator:
+                raise HTTPException(status_code=404, detail="Not a coordinator")
+            return {"paused": sorted(self._paused_hosts)}
+
+        @app.post("/api/v1/workers/pause")
+        async def pause_worker(req: WorkerPauseRequest):
+            if not self.config.runs_coordinator:
+                raise HTTPException(status_code=404, detail="Not a coordinator")
+            host = req.host.strip().split(":")[0]
+            if not host:
+                raise HTTPException(status_code=400, detail="host is required")
+            self._paused_hosts.add(host)
+            self.inference.set_excluded_hosts(self._paused_hosts)
+            return {"paused": sorted(self._paused_hosts)}
+
+        @app.post("/api/v1/workers/resume")
+        async def resume_worker(req: WorkerPauseRequest):
+            if not self.config.runs_coordinator:
+                raise HTTPException(status_code=404, detail="Not a coordinator")
+            host = req.host.strip().split(":")[0]
+            self._paused_hosts.discard(host)
+            self.inference.set_excluded_hosts(self._paused_hosts)
+            return {"paused": sorted(self._paused_hosts)}
+
         @app.get("/api/v1/membership")
         async def membership_view():
             if not self.config.discovery_enabled:
@@ -217,7 +251,11 @@ class NodeApp:
 
                 peer_statuses = [PeerStatus.model_validate(p) for p in peers]
                 worker_hosts = self.membership.get_alive_worker_hosts()
-                rpc_eps = self.config.rpc_endpoints(worker_hosts or None)
+                rpc_eps = [
+                    ep
+                    for ep in self.config.rpc_endpoints(worker_hosts or None)
+                    if ep.rsplit(":", 1)[0] not in self._paused_hosts
+                ]
                 return ClusterStatus(
                     coordinator_node_id=self.config.node_id
                     if self.config.runs_coordinator
@@ -230,6 +268,7 @@ class NodeApp:
                     local_model_usage=self._local_model_usage(),
                     coordinator_ip=coordinator_ip,
                     membership=view,
+                    paused_workers=sorted(self._paused_hosts),
                 )
 
             peers = await check_all_peers(self.config)
@@ -238,12 +277,17 @@ class NodeApp:
                 if self.config.runs_coordinator
                 else "remote",
                 peers=peers,
-                rpc_endpoints=self.config.rpc_endpoints(),
+                rpc_endpoints=[
+                    ep
+                    for ep in self.config.rpc_endpoints()
+                    if ep.rsplit(":", 1)[0] not in self._paused_hosts
+                ],
                 inbound_rpc_clients=inbound,
                 generation=1,
                 local_resources=gather_resources(),
                 local_model_usage=self._local_model_usage(),
                 coordinator_ip=coordinator_ip,
+                paused_workers=sorted(self._paused_hosts),
             )
 
         if self.config.inference.backend == "mock":
@@ -273,7 +317,9 @@ class NodeApp:
             if self.config.discovery_enabled and path == "chat/completions":
                 self._sync_inference_peers()
                 view = self.membership.get_membership_view()
-                lease = self.coordinator_registry.create_lease(view.members)
+                # Paused workers stay members but never get placement.
+                eligible = [m for m in view.members if m.host not in self._paused_hosts]
+                lease = self.coordinator_registry.create_lease(eligible)
                 request_id = lease.request_id
                 if lease.worker_endpoints:
                     hosts = [ep.rsplit(":", 1)[0] for ep in lease.worker_endpoints]

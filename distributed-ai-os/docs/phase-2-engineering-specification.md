@@ -163,6 +163,8 @@ graph TB
 
 ## References
 
-- Phase 1 architecture: `goal/Phase_2_Engineering_Specification.md`
+- Phase 1 research & architecture: `docs/phase-1-research-architecture.md`
+- Phase 2 source spec: `goal/Phase_2_Engineering_Specification.md`
 - Gen 2 examples: `examples/two-node-discovered/`
 - Test suite: `tests/test_discovery.py`, `tests/test_membership.py`, `tests/test_coordinator.py`
+- Testing & performance: `docs/phase-2/17-testing-performance.md`

@@ -92,7 +92,7 @@ export default function LiveStatus({
       <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
         <div>
           <div className="flex items-center gap-3 mb-3">
-            <span className="h-4 w-1.5 m-stripe" aria-hidden="true" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full m-stripe" aria-hidden="true" />
             <span className="label-caps text-muted">
               {isCoordinator ? "Coordinator" : "Worker"}
             </span>
@@ -178,7 +178,7 @@ export default function LiveStatus({
         </div>
 
         {peer && !peerOk && isCoordinator && (
-          <div className="mb-4 bg-surface-soft border-l-2 border-warning px-4 py-3 text-body text-sm font-light">
+        <div className="mb-4 bg-surface-soft border-l-2 border-warning rounded-xl px-4 py-3 text-body text-sm font-light backdrop-blur-xl">
             Worker at{" "}
             <span className="font-display text-on-dark">
               {peer.host}:{peer.rpc_port}
@@ -203,7 +203,7 @@ export default function LiveStatus({
         )}
 
         {isWorker && (
-          <div className="mb-4 bg-surface-soft border border-hairline px-4 py-3 text-body text-sm font-light">
+        <div className="mb-4 bg-surface-soft border border-hairline rounded-xl px-4 py-3 text-body text-sm font-light backdrop-blur-xl">
             {inboundClients > 0 ? (
               <>
                 Coordinator
@@ -234,20 +234,20 @@ export default function LiveStatus({
         )}
 
         {updateError && (
-          <div className="mb-4 bg-surface-soft border-l-2 border-m-red px-4 py-3 text-body-strong text-sm font-light">
+          <div className="mb-4 bg-surface-soft border-l-2 border-m-red rounded-xl px-4 py-3 text-body-strong text-sm font-light backdrop-blur-xl">
             {updateError}
           </div>
         )}
 
         {status.last_error && (
-          <div className="mb-4 bg-surface-soft border-l-2 border-m-red px-4 py-3 text-body-strong text-sm font-light">
+          <div className="mb-4 bg-surface-soft border-l-2 border-m-red rounded-xl px-4 py-3 text-body-strong text-sm font-light backdrop-blur-xl">
             {status.last_error}
           </div>
         )}
 
         {isCoordinator && nodeOk && (
-          <div className="mb-6 bg-surface-soft border border-hairline">
-            <div className="h-1 w-full m-stripe" aria-hidden="true" />
+          <div className="mb-6 bg-surface-soft border border-hairline rounded-2xl backdrop-blur-xl overflow-hidden">
+            <div className="h-1 w-full m-stripe opacity-70" aria-hidden="true" />
             <div className="px-5 py-4">
               <div className="label-caps text-[12px] text-muted mb-2">
                 Use in Cursor or VS Code
@@ -260,7 +260,7 @@ export default function LiveStatus({
                   whileTap={{ scale: 0.97 }}
                   type="button"
                   onClick={handleCopyApiUrl}
-                  className="cursor-pointer shrink-0 px-4 min-h-[40px] label-caps text-[11px] border border-hairline text-muted hover:text-on-dark hover:border-on-dark transition-colors"
+                  className="cursor-pointer shrink-0 px-4 min-h-[40px] label-caps text-[11px] rounded-full border border-hairline text-muted hover:text-on-dark hover:border-hairline-strong transition-colors"
                 >
                   {copied ? "Copied" : "Copy URL"}
                 </motion.button>

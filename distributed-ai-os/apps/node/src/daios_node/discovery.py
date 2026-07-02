@@ -103,8 +103,9 @@ if _ZEROCONF_AVAILABLE:
 
         async def _resolve(self, type_: str, name: str) -> None:
             info = AsyncServiceInfo(type_, name)
-            await info.async_request(self._aiozc.zeroconf, 3000)
-            if not info:
+            # async_request returns False when resolution times out; the info
+            # object itself is always truthy, so check the return value.
+            if not await info.async_request(self._aiozc.zeroconf, 3000):
                 return
             member = _service_info_to_member(info)
             if not member or member.node_id == self._self_node_id:

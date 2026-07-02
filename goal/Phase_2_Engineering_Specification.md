@@ -596,3 +596,38 @@ Generate specifications for:
 - Step-by-step implementation order
 
 > The final specification must enable implementation through successive generations while maintaining stable APIs, minimizing rewrites, and allowing mature open-source components to be replaced only when measurable technical benefits justify the migration.
+
+---
+
+## Phase 2 Status
+
+Status: **Complete** (2026-06-30)
+
+Engineering specification: [`distributed-ai-os/docs/phase-2-engineering-specification.md`](../distributed-ai-os/docs/phase-2-engineering-specification.md) — index plus 18 sub-documents in [`distributed-ai-os/docs/phase-2/`](../distributed-ai-os/docs/phase-2/).
+
+All mandated deliverables are present (verified 2026-06-30):
+
+| # | Deliverable | Document |
+|---|---|---|
+| 01 | Repository architecture | `phase-2/01-repository-architecture.md` |
+| 02 | Generation roadmap (Gen 1–5) | `phase-2/02-generation-roadmap.md` |
+| 03 | Build vs Buy matrix | `phase-2/03-build-vs-buy-matrix.md` |
+| 04 | Service specifications | `phase-2/04-service-specifications.md` |
+| 05 | Node architecture | `phase-2/05-node-architecture.md` |
+| 06 | Dynamic coordinator | `phase-2/06-dynamic-coordinator.md` |
+| 07 | Scheduler specification (Gen 3) | `phase-2/07-scheduler-spec.md` |
+| 08 | Resource contribution algorithms | `phase-2/08-resource-contribution.md` |
+| 09 | Networking specification | `phase-2/09-networking-spec.md` |
+| 10 | API specifications | `phase-2/10-api-specifications.md` |
+| 11 | Protocol definitions | `phase-2/11-protocol-definitions.md` |
+| 12 | Migration strategy | `phase-2/12-migration-strategy.md` |
+| 13 | Dashboard & desktop specification | `phase-2/13-dashboard-desktop-spec.md` |
+| 14 | CLI & SDK specification | `phase-2/14-cli-sdk-spec.md` |
+| 15 | Plugin architecture | `phase-2/15-plugin-architecture.md` |
+| 16 | Security specification | `phase-2/16-security-spec.md` |
+| 17 | Testing strategy & performance targets | `phase-2/17-testing-performance.md` |
+| 18 | Step-by-step implementation order | `phase-2/18-implementation-order.md` |
+
+Generation 2 (peer-to-peer discovery, gossip membership, ephemeral coordinators) is implemented in `apps/node` and opt-in via `discovery.enabled: true`, backward compatible with Gen 1 manual YAML. Generations 3–5 are specified but not yet implemented.
+
+**Deferred (non-blocking):** CI/CD pipeline automation and Operations/Troubleshooting guides — tracked for `deploy/` and the Gen 3 operations guide respectively.

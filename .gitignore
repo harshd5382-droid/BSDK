@@ -2,3 +2,13 @@
 __pycache__/
 *.pyc
 .env
+
+# PyInstaller build output / release artifacts
+build/
+dist/
+*.spec.bak
+# Native binaries staged for bundling into the worker exe
+distributed-ai-os/packaging/windows/bin/
+# Generated runtime/install state
+.daios-runtime/
+logs/

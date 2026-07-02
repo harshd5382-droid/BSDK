@@ -34,9 +34,9 @@ export default function ResourcePanel({ status, cluster }: Props) {
   ];
 
   return (
-    <div className="bg-surface-soft border border-hairline overflow-hidden">
+    <div className="bg-surface-soft border border-hairline rounded-2xl backdrop-blur-xl overflow-hidden">
       <div className="px-4 py-3 border-b border-hairline flex items-center justify-between">
-        <span className="label-caps text-[12px] text-on-dark">
+        <span className="label-caps text-[12px] text-body-strong">
           Resource Usage — All PCs
         </span>
         <span className="font-display text-xs font-light text-muted">
@@ -71,12 +71,12 @@ function NodeResourceRow({
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2.5">
           <span
-            className={`inline-block w-2 h-2 ${
-              node.online ? "bg-on-dark" : "bg-hairline"
+            className={`inline-block w-2 h-2 rounded-full ${
+              node.online ? "m-stripe" : "bg-hairline"
             }`}
             aria-hidden="true"
           />
-          <span className="font-display text-sm font-bold text-on-dark truncate">
+          <span className="font-display text-sm font-semibold text-on-dark truncate">
             {node.label}
           </span>
           <span className="label-caps text-[11px] text-muted">{node.sub}</span>

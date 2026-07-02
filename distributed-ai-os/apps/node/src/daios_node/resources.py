@@ -61,6 +61,8 @@ def _gather_gpu_info() -> GpuInfo | None:
             capture_output=True,
             text=True,
             timeout=3,
+            # Polled frequently — must never flash a console from a windowed exe.
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if result.returncode != 0 or not result.stdout.strip():
             return None

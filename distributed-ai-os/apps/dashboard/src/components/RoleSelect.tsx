@@ -35,7 +35,7 @@ export default function RoleSelect({ onSelect, onBack }: Props) {
   return (
     <div className="max-w-4xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
-        <span className="h-4 w-1.5 m-stripe" aria-hidden="true" />
+        <span className="relative inline-flex h-2.5 w-2.5 rounded-full m-stripe" aria-hidden="true" />
         <span className="label-caps text-muted">Setup · Step 1</span>
       </div>
 
@@ -100,11 +100,12 @@ function RoleCard({
       initial="hidden"
       animate="visible"
       whileTap={{ scale: 0.99 }}
+      whileHover={{ y: -2 }}
       onClick={onClick}
-      className="group cursor-pointer text-left bg-surface-card border border-hairline hover:border-on-dark p-6 transition-colors duration-200 focus:outline-none focus:border-on-dark"
+      className="group cursor-pointer text-left bg-surface-soft border border-hairline hover:border-hairline-strong rounded-2xl p-6 backdrop-blur-xl transition-all duration-200 focus:outline-none focus:border-hairline-strong hover:shadow-[0_16px_40px_-16px_rgba(109,94,240,0.35)]"
     >
-      <span className="block h-1 w-10 m-stripe mb-6 opacity-60 group-hover:w-full group-hover:opacity-100 transition-all duration-300" />
-      <div className="text-on-dark mb-5">{icon}</div>
+      <span className="block h-1 w-10 rounded-full m-stripe mb-6 opacity-50 group-hover:w-full group-hover:opacity-100 transition-all duration-300" />
+      <div className="inline-flex items-center justify-center h-12 w-12 rounded-xl bg-surface-elevated border border-hairline text-on-dark mb-5">{icon}</div>
       <div className="display text-2xl mb-2">{title}</div>
       <div className="label-caps text-[12px] text-muted mb-4">{subtitle}</div>
       <p className="text-body text-sm font-light leading-relaxed">

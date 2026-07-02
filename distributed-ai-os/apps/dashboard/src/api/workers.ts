@@ -52,6 +52,52 @@ export async function updateWorker(host: string): Promise<unknown> {
 
 export async function getWorkerVersion(
   host: string,
-): Promise<{ commit: string | null; branch: string | null }> {
+): Promise<{ commit: string | null; branch: string | null; exe_sha256?: string | null }> {
   return workerFetch(host, "/version");
+}
+
+async function clusterPauseFetch(action: "pause" | "resume", host: string): Promise<string[]> {
+  const res = await fetch(`/api/launcher/cluster/workers/${action}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ host }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(
+      typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail),
+    );
+  }
+  const data = (await res.json()) as { paused: string[] };
+  return data.paused;
+}
+
+/** Temporarily stop pooling this worker's resources (the worker keeps running). */
+export async function pauseWorker(host: string): Promise<string[]> {
+  return clusterPauseFetch("pause", host.split(":")[0]);
+}
+
+/** Resume pooling a previously paused worker's resources. */
+export async function resumeWorker(host: string): Promise<string[]> {
+  return clusterPauseFetch("resume", host.split(":")[0]);
+}
+
+export interface WorkerExeInfo {
+  sha256: string;
+  size_bytes: number;
+  modified: string;
+  path: string;
+}
+
+/** Info about the worker exe build this coordinator can push to worker PCs. */
+export async function getWorkerExeInfo(): Promise<WorkerExeInfo | null> {
+  const res = await fetch("/api/launcher/worker-exe/info");
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(
+      typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail),
+    );
+  }
+  return res.json() as Promise<WorkerExeInfo>;
 }

@@ -5,18 +5,21 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator, Literal
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from daios_launcher import exe_update, paths
+from daios_launcher.artifacts import ArtifactError
 from daios_launcher.autostart_windows import install_task, task_installed, uninstall_task
 from daios_launcher.config_gen import (
     DEFAULT_CHAT_MAX_TOKENS,
@@ -30,7 +33,6 @@ from daios_launcher.models_manager import (
     download_state,
     list_models,
 )
-from daios_launcher.platform_utils import resolve_venv_binary
 from daios_launcher.process_manager import LauncherState, ProcessManager, default_venv_bin
 from daios_launcher.security import LauncherTokenMiddleware
 from daios_launcher.settings import LauncherSettings
@@ -38,6 +40,7 @@ from daios_launcher.system_info import gather_system_info
 from daios_launcher.update import get_version, pull_latest, reinstall_deps, reexec_launcher
 from daios_launcher.validation import validate_start_request, wait_for_peer
 from daios_launcher.worker_proxy import (
+    forward_worker_launcher,
     get_worker_status as proxy_worker_status,
     start_worker as proxy_start_worker,
     stop_worker as proxy_stop_worker,
@@ -86,10 +89,20 @@ class ModelSelectRequest(BaseModel):
 class UpdateRequest(BaseModel):
     branch: str | None = None
     reexec: bool = True
+    # Exe-based update (frozen worker installs): the coordinator announces the
+    # SHA-256 of the exe it serves at /api/launcher/worker-exe. Host defaults to
+    # the requesting client (the coordinator that pushed the update).
+    exe_sha256: str | None = None
+    exe_source_host: str | None = None
+    exe_source_port: int | None = None
 
 
 class AutostartInstallRequest(BaseModel):
     exe_path: str | None = None
+
+
+class WorkerPauseRequest(BaseModel):
+    host: str
 
 
 class LauncherApp:
@@ -128,10 +141,29 @@ class LauncherApp:
             await self._http.aclose()
 
     async def _autostart_worker(self) -> None:
-        backend = "llama.cpp"
-        rpc_bin = resolve_venv_binary(self.project_root, "ggml-rpc-server")
+        from daios_launcher import paths
+        from daios_launcher.config_gen import _runtime_binary
+
+        rpc_bin = _runtime_binary(self.project_root, "ggml-rpc-server")
         if not Path(rpc_bin).is_file():
+            if paths.is_frozen() or os.environ.get("DAIOS_REQUIRE_REAL_BACKEND") == "1":
+                # Production: never silently mock. The installer is responsible for
+                # materializing a verified ggml-rpc-server.exe before the service runs.
+                logger.error(
+                    "Real worker binary missing at %s — refusing to start. The mock "
+                    "backend is not a substitute. Re-run the installer to download and "
+                    "verify ggml-rpc-server.exe.",
+                    rpc_bin,
+                )
+                return
+            logger.warning(
+                "ggml-rpc-server not found at %s; starting MOCK worker (dev only — "
+                "this is NOT a real worker).",
+                rpc_bin,
+            )
             backend = "mock"
+        else:
+            backend = "llama.cpp"
         req = StartRequest(
             role=NodeRole.WORKER,
             backend=backend,
@@ -200,7 +232,10 @@ class LauncherApp:
 
         @app.get("/api/launcher/version")
         async def version():
-            return get_version(self.project_root).to_dict()
+            info = get_version(self.project_root).to_dict()
+            if paths.is_frozen():
+                info["exe_sha256"] = await asyncio.to_thread(exe_update.current_exe_sha256)
+            return info
 
         @app.post("/api/launcher/start")
         async def start(req: StartRequest):
@@ -282,7 +317,11 @@ class LauncherApp:
             return {"status": LauncherState.STOPPED.value}
 
         @app.post("/api/launcher/update")
-        async def update(req: UpdateRequest):
+        async def update(req: UpdateRequest, request: Request):
+            if paths.is_frozen():
+                # Self-contained exe install: no git repo/venv to update. Pull the
+                # new exe from the coordinator and relaunch via the installer.
+                return await self._exe_self_update(req, request)
             self.process_manager.stop_node()
             pull = pull_latest(self.project_root, branch=req.branch)
             if not pull.ok:
@@ -428,7 +467,53 @@ class LauncherApp:
             async def worker_update(host: str):
                 if not self._http:
                     raise HTTPException(status_code=503, detail="Launcher not ready")
-                return await proxy_update_worker(self._http, host, self.cluster_token)
+                # Announce our exe build (if any) so frozen workers can pull it;
+                # git-based workers ignore these fields.
+                extra: dict = {}
+                exe = exe_update.serveable_worker_exe(self.project_root)
+                if exe:
+                    info = await asyncio.to_thread(exe_update.exe_info, exe)
+                    extra = {
+                        "exe_sha256": info["sha256"],
+                        "exe_source_port": self.settings.launcher_port,
+                    }
+                return await proxy_update_worker(
+                    self._http, host, self.cluster_token, extra=extra
+                )
+
+            @app.get("/api/launcher/workers/{host}/version")
+            async def worker_version(host: str):
+                if not self._http:
+                    raise HTTPException(status_code=503, detail="Launcher not ready")
+                return await forward_worker_launcher(
+                    self._http, host, self.cluster_token, "GET", "/version"
+                )
+
+            @app.get("/api/launcher/worker-exe/info")
+            async def worker_exe_info():
+                exe = exe_update.serveable_worker_exe(self.project_root)
+                if not exe:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=(
+                            "No worker exe build found (dist/daios-worker.exe). "
+                            "Build it with scripts\\windows\\build-exe.ps1."
+                        ),
+                    )
+                info = dict(await asyncio.to_thread(exe_update.exe_info, exe))
+                info["path"] = str(exe)
+                return info
+
+            @app.get("/api/launcher/worker-exe")
+            async def worker_exe_download():
+                exe = exe_update.serveable_worker_exe(self.project_root)
+                if not exe:
+                    raise HTTPException(status_code=404, detail="No worker exe build found")
+                return FileResponse(
+                    exe,
+                    media_type="application/octet-stream",
+                    filename="daios-worker.exe",
+                )
 
         @app.get("/api/launcher/cluster")
         async def cluster():
@@ -443,6 +528,14 @@ class LauncherApp:
                 return resp.json()
             except httpx.HTTPError as exc:
                 raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        @app.post("/api/launcher/cluster/workers/pause")
+        async def cluster_pause_worker(req: WorkerPauseRequest):
+            return await self._forward_node_pause("pause", req.host)
+
+        @app.post("/api/launcher/cluster/workers/resume")
+        async def cluster_resume_worker(req: WorkerPauseRequest):
+            return await self._forward_node_pause("resume", req.host)
 
         @app.get("/api/launcher/health")
         async def node_health():
@@ -532,6 +625,63 @@ class LauncherApp:
 
         self._mount_dashboard(app)
         return app
+
+    async def _forward_node_pause(self, action: str, host: str) -> dict:
+        """Forward a worker pause/resume to the local coordinator node."""
+        if not self._http:
+            raise HTTPException(status_code=503, detail="Launcher not ready")
+        api_port = await self._active_api_port()
+        try:
+            resp = await self._http.post(
+                f"http://127.0.0.1:{api_port}/api/v1/workers/{action}",
+                json={"host": host},
+                timeout=60.0,  # resume/pause restarts llama-server (model reload)
+            )
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        if resp.status_code >= 400:
+            try:
+                detail = resp.json().get("detail", resp.text)
+            except ValueError:
+                detail = resp.text
+            raise HTTPException(status_code=resp.status_code, detail=detail)
+        return resp.json()
+
+    async def _exe_self_update(self, req: UpdateRequest, request: Request) -> dict:
+        """Frozen-install update: pull the new exe from the coordinator and relaunch."""
+        if not req.exe_sha256:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "This worker is a self-contained exe install; the coordinator has "
+                    "no worker exe build to push. On the main PC, build it with "
+                    "scripts\\windows\\build-exe.ps1 and try again."
+                ),
+            )
+        current = await asyncio.to_thread(exe_update.current_exe_sha256)
+        if current and current.lower() == req.exe_sha256.lower():
+            return {"ok": True, "up_to_date": True, "exe_sha256": current}
+
+        source_host = req.exe_source_host or (request.client.host if request.client else None)
+        if not source_host:
+            raise HTTPException(status_code=400, detail="Cannot determine update source host")
+        source_port = req.exe_source_port or 8090
+
+        try:
+            staged = await asyncio.to_thread(
+                exe_update.download_worker_exe,
+                source_host,
+                source_port,
+                req.exe_sha256,
+                self.cluster_token,
+            )
+        except ArtifactError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        # Respond first, then hand off to the staged installer (which stops this
+        # process, swaps the exe atomically, and restarts the service).
+        threading.Timer(1.0, lambda: exe_update.spawn_staged_installer(staged)).start()
+        return {"ok": True, "restarting": True, "exe_sha256": req.exe_sha256}
 
     async def _active_api_port(self) -> int:
         node = self.process_manager.node

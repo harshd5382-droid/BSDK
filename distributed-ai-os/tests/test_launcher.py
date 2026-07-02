@@ -40,7 +40,8 @@ def test_build_coordinator_config():
     assert len(config.peers) == 1
     assert config.peers[0].host == "192.168.1.42"
     assert config.inference.backend == "mock"
-    assert config.inference.llama_server_bin.endswith("llama-server")
+    # ``.exe`` suffix is appended on Windows by resolve_venv_binary.
+    assert config.inference.llama_server_bin.endswith(("llama-server", "llama-server.exe"))
 
 
 def test_build_worker_config():
@@ -151,15 +152,24 @@ def test_launcher_chat_mock(mock_coordinator_running):
     assert "DAIOS mock" in data["choices"][0]["message"]["content"]
 
 
-def test_build_coordinator_resolves_model_path():
+def test_build_coordinator_resolves_model_path(tmp_path):
+    # Hermetic: resolution should find the model under <root>/models/ by name.
+    # Use a tmp root with a stub file so the test doesn't depend on a real
+    # multi-hundred-MB GGUF download being present on disk.
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    model_file = models_dir / "qwen2.5-0.5b-instruct-q4_k_m.gguf"
+    model_file.write_bytes(b"GGUF")  # too small to parse — context falls back, no crash
+
     req = StartRequest(
         role=NodeRole.COORDINATOR,
         peer_host="192.168.1.42",
         model_path="qwen2.5-0.5b-instruct-q4_k_m.gguf",
         backend="llama.cpp",
     )
-    config = build_node_config(req, project_root=ROOT)
+    config = build_node_config(req, project_root=tmp_path)
     assert config.inference.model_path
+    assert Path(config.inference.model_path) == model_file
     assert Path(config.inference.model_path).is_file()
 
 
