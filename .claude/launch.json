@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard",
+      "runtimeExecutable": "distributed-ai-os/.venv/Scripts/daios-launcher.exe",
+      "runtimeArgs": ["--root", "distributed-ai-os", "--port", "8091"],
+      "port": 8091
+    }
+  ]
+}
