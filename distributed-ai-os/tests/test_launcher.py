@@ -99,6 +99,28 @@ def test_worker_has_no_distribution():
     assert config.inference.distribution is None
 
 
+def test_distributed_coordinator_offloads_all_layers(monkeypatch):
+    """A CPU-only coordinator pooling workers must still set -ngl so layers
+    stream to the RPC devices; -ngl 0 would keep the whole model local and hang
+    on load when it does not fit the coordinator alone."""
+    monkeypatch.setattr("daios_launcher.config_gen._has_nvidia_gpu", lambda: False)
+    req = StartRequest(
+        role=NodeRole.COORDINATOR,
+        peer_hosts=["192.168.1.42", "192.168.1.43"],
+        backend="llama.cpp",
+    )
+    config = build_node_config(req, node_id="test-coord-ngl")
+    assert config.inference.n_gpu_layers == 99
+
+
+def test_solo_cpu_coordinator_keeps_ngl_zero(monkeypatch):
+    """No workers, no local GPU → nothing to offload to, so -ngl stays 0."""
+    monkeypatch.setattr("daios_launcher.config_gen._has_nvidia_gpu", lambda: False)
+    req = StartRequest(role=NodeRole.COORDINATOR, backend="llama.cpp")
+    config = build_node_config(req, node_id="test-coord-solo-ngl")
+    assert config.inference.n_gpu_layers == 0
+
+
 def test_default_node_id_includes_hostname(monkeypatch):
     monkeypatch.setattr("daios_launcher.config_gen.socket.gethostname", lambda: "My-PC-2")
     assert _default_node_id(NodeRole.WORKER, 8001) == "worker-my-pc-2-8001"

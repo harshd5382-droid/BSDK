@@ -166,10 +166,23 @@ def _default_node_id(role: NodeRole, api_port: int) -> str:
     return f"{role.value}-{slug}-{api_port}"
 
 
-def _resolve_gpu_layers(backend: str) -> int:
+def _resolve_gpu_layers(backend: str, *, distributed: bool = False) -> int:
+    """Number of layers to offload via ``-ngl``.
+
+    llama.cpp treats every ``--rpc`` device as a GPU-class device: layers are
+    only placed on RPC workers when ``-ngl`` covers them. A distributed
+    coordinator with ``-ngl 0`` would keep the *entire* model on its own CPU/RAM
+    and stream nothing to the workers — so a model too big for the coordinator
+    alone hangs forever on "loading model" (mmap thrash / OOM under ``--mlock``),
+    which is the whole failure the RPC pool exists to avoid. Offload all layers
+    whenever workers are pooled, even on a CPU-only coordinator; ``--tensor-split``
+    then decides how they spread across the RPC devices.
+    """
     if backend != "llama.cpp":
         return 0
-    return 99 if _has_nvidia_gpu() else 0
+    if distributed or _has_nvidia_gpu():
+        return 99
+    return 0
 
 
 def _coordinator_distribution(role: NodeRole) -> DistributionConfig | None:
@@ -242,7 +255,7 @@ def build_node_config(
         rpc_server_bin=_runtime_binary(root, "ggml-rpc-server"),
         model_path=resolved_model,
         llama_server_port=8080,
-        n_gpu_layers=_resolve_gpu_layers(req.backend),
+        n_gpu_layers=_resolve_gpu_layers(req.backend, distributed=distributed),
         context_size=_resolve_context_size(resolved_model, req.backend, distributed=distributed),
         threads=_default_threads(),
         rpc_cache=True,
