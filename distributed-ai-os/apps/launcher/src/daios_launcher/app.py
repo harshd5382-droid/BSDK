@@ -50,6 +50,12 @@ from daios_protocol.config import NodeRole, PeerConfig
 
 logger = logging.getLogger(__name__)
 
+# How long chat should wait for the model to finish loading before giving up,
+# and how often to re-probe. Distributed model load over the RPC pool can take
+# minutes on CPU, so we default to a generous wait instead of failing fast.
+_INFERENCE_READY_WAIT_S = float(os.environ.get("DAIOS_INFERENCE_READY_WAIT", "180"))
+_INFERENCE_READY_POLL_S = float(os.environ.get("DAIOS_INFERENCE_READY_POLL", "1.0"))
+
 
 def _sanitize_start_error(error: str | None) -> str | None:
     if not error:
@@ -757,45 +763,98 @@ class LauncherApp:
         raise HTTPException(status_code=503, detail=detail)
 
     async def _ensure_inference_ready(self, api_port: int) -> None:
-        """Fail fast when chat is sent before llama-server can serve."""
+        """Wait for llama-server to actually serve, not just for the process to be alive.
+
+        The node reports ``llama_server: running`` as soon as the process is
+        spawned, but llama-server returns 503 on ``/v1/*`` while the model is
+        still loading into memory (which can take minutes over the RPC pool).
+        Failing fast here surfaces "loading model" to the chat UI and never
+        recovers. Instead we poll the node health and probe llama-server's
+        ``/v1/models`` (200 when ready, 503 while loading) up to a bounded
+        timeout, so a prompt sent during load just waits and then streams.
+        """
         if not self._http:
             raise HTTPException(status_code=503, detail="Launcher not ready")
-        try:
-            resp = await self._http.get(
-                f"http://127.0.0.1:{api_port}/health",
-                timeout=5.0,
-            )
-            health = resp.json()
-        except httpx.HTTPError as exc:
-            raise HTTPException(status_code=503, detail=f"Node health check failed: {exc}") from exc
-        inf = health.get("inference", {})
-        state = inf.get("llama_server")
-        pending = inf.get("llama_server_pending", False)
-        if state == "running":
-            return
-        if pending:
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "Model is still loading across workers (waiting for RPC pool). "
-                    "Wait up to 30 seconds, then try again."
-                ),
-            )
-        if state == "failed":
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "llama-server failed to load the model. Click Restart on the "
-                    "coordinator and check that worker PCs are running."
-                ),
-            )
+
+        deadline = asyncio.get_event_loop().time() + _INFERENCE_READY_WAIT_S
+        last_detail: str | None = None
+        while True:
+            try:
+                resp = await self._http.get(
+                    f"http://127.0.0.1:{api_port}/health",
+                    timeout=5.0,
+                )
+                health = resp.json()
+            except httpx.HTTPError as exc:
+                last_detail = f"Node health check failed: {exc}"
+                if asyncio.get_event_loop().time() >= deadline:
+                    raise HTTPException(status_code=503, detail=last_detail) from exc
+                await asyncio.sleep(_INFERENCE_READY_POLL_S)
+                continue
+
+            inf = health.get("inference", {})
+            state = inf.get("llama_server")
+            pending = inf.get("llama_server_pending", False)
+
+            if state == "failed":
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "llama-server failed to load the model. Click Restart on "
+                        "the coordinator and check that worker PCs are running."
+                    ),
+                )
+
+            # Probe llama-server itself: the process can be "running" while the
+            # model is still loading. /v1/models returns 200 only when ready.
+            ready, probe_detail = await self._probe_llama_ready(api_port)
+            if ready and state == "running" and not pending:
+                return
+
+            if not ready:
+                last_detail = probe_detail or last_detail
+            elif pending:
+                last_detail = (
+                    "Model is still loading across workers (waiting for RPC pool)."
+                )
+
+            if asyncio.get_event_loop().time() >= deadline:
+                break
+            await asyncio.sleep(_INFERENCE_READY_POLL_S)
+
         raise HTTPException(
             status_code=503,
             detail=(
-                "Model is not ready. Start or restart the coordinator with workers "
-                "connected, then wait until the Distribution panel shows running."
+                last_detail
+                or "Model is still loading. Wait a few seconds and try again."
             ),
+            headers={"Retry-After": "5"},
         )
+
+    async def _probe_llama_ready(self, api_port: int) -> tuple[bool, str | None]:
+        """GET /v1/models through the node proxy. 200 => ready, 503 => loading."""
+        if not self._http:
+            return False, "Launcher not ready"
+        try:
+            resp = await self._http.get(
+                f"http://127.0.0.1:{api_port}/v1/models",
+                timeout=5.0,
+            )
+        except httpx.HTTPError as exc:
+            return False, f"llama-server unreachable: {exc}"
+        if resp.status_code == 200:
+            return True, None
+        if resp.status_code == 503:
+            detail = "Model is still loading across workers (waiting for RPC pool)."
+            try:
+                body = resp.json()
+                msg = body.get("error", {}).get("message") if isinstance(body, dict) else None
+                if isinstance(msg, str) and msg:
+                    detail = f"Model is still loading: {msg}"
+            except ValueError:
+                pass
+            return False, detail
+        return False, f"llama-server returned HTTP {resp.status_code}"
 
     def _mount_dashboard(self, app: FastAPI) -> None:
         dist = self.dashboard_dist

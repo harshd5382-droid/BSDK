@@ -215,6 +215,20 @@ export default function ChatBot() {
           ))}
         </AnimatePresence>
 
+        {loading &&
+          messages.length > 0 &&
+          messages[messages.length - 1].role === "user" && (
+            <motion.div
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex justify-start"
+            >
+              <div className="px-3 py-2 text-sm font-light text-muted animate-pulse">
+                Loading model…
+              </div>
+            </motion.div>
+          )}
+
         {error && (
           <motion.div
             role="alert"
