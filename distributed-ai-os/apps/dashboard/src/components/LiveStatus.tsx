@@ -30,8 +30,12 @@ export default function LiveStatus({
   stopping,
   restarting = false,
 }: Props) {
-  const peer = cluster?.peers[0];
-  const peerOk = peer?.reachable ?? false;
+  const peers = cluster?.peers ?? [];
+  const reachablePeers = peers.filter((p) => p.reachable);
+  // Aggregate over every configured peer. Using only peers[0] hid the second
+  // worker in a 2-worker cluster and reported a healthy peer as unreachable.
+  const anyPeerOk = reachablePeers.length > 0;
+  const unreachablePeer = peers.find((p) => !p.reachable);
   const nodeOk = status.node_state === "running";
   const isCoordinator = status.role === "coordinator";
   const isWorker = status.role === "worker";
@@ -160,8 +164,14 @@ export default function LiveStatus({
           ) : (
             <StatusPill
               label="Peer RPC"
-              ok={peerOk}
-              detail={peer ? peer.host : "none"}
+              ok={anyPeerOk}
+              detail={
+                peers.length === 0
+                  ? "none"
+                  : reachablePeers.length === peers.length
+                    ? `${reachablePeers.length}/${peers.length} up`
+                    : `${reachablePeers.length}/${peers.length} up`
+              }
             />
           )}
           {isCoordinator && (
@@ -178,14 +188,14 @@ export default function LiveStatus({
           />
         </div>
 
-        {peer && !peerOk && isCoordinator && (
+        {isCoordinator && unreachablePeer && (
         <div className="mb-4 bg-surface-soft border-l-2 border-warning rounded-xl px-4 py-3 text-body text-sm font-light backdrop-blur-xl">
             Worker at{" "}
             <span className="font-display text-on-dark">
-              {peer.host}:{peer.rpc_port}
+              {unreachablePeer.host}:{unreachablePeer.rpc_port}
             </span>{" "}
             is not reachable
-            {peer.error ? ` (${peer.error})` : ""}.
+            {unreachablePeer.error ? ` (${unreachablePeer.error})` : ""}.
             <ol className="mt-2 list-decimal list-inside space-y-1 marker:text-muted">
               <li>
                 On the worker PC: open this dashboard →{" "}
@@ -195,7 +205,7 @@ export default function LiveStatus({
               <li>
                 Confirm it shows address{" "}
                 <span className="font-display text-on-dark">
-                  {peer.host}:50052
+                  {unreachablePeer.host}:50052
                 </span>
               </li>
               <li>Then click Restart on this Coordinator PC</li>

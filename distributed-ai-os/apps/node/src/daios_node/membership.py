@@ -139,9 +139,22 @@ class MembershipService:
         )
 
     def get_alive_worker_hosts(self) -> list[str]:
+        """Worker hosts eligible for the RPC pool.
+
+        A ``SUSPECT`` worker has only missed a couple of heartbeats (e.g. a
+        transient LAN blip or a slow probe); it is still very likely reachable.
+        Evicting it the moment it flips to SUSPECT drops it from ``--rpc``,
+        which marks the topology stale and forces a full llama-server restart —
+        and that restart is what makes the cluster flap between workers (only
+        one pooled at a time) and reloads the model onto the coordinator. So we
+        keep SUSPECT workers pooled and only evict on ``DEAD``.
+        """
         hosts: list[str] = []
         for m in self._members.values():
-            if m.status == MemberStatus.ALIVE and m.role in ("worker", "hybrid"):
+            if m.status in (MemberStatus.ALIVE, MemberStatus.SUSPECT) and m.role in (
+                "worker",
+                "hybrid",
+            ):
                 hosts.append(m.host)
         return hosts
 
@@ -205,9 +218,18 @@ class MembershipService:
             discovered = self.discovery.get_discovered_peers()
             for peer in discovered:
                 self._upsert_member(peer)
-            for member in list(self._members.values()):
-                if member.status != MemberStatus.DEAD:
-                    await self._send_heartbeat(member)
+            # Send heartbeats concurrently, not sequentially. A sequential loop
+            # with a per-member timeout means one slow/unreachable worker blocks
+            # the probe to every worker after it in the list, which cascades
+            # healthy workers into SUSPECT/DEAD and makes the cluster flap
+            # between workers (only one pooled at a time).
+            members = [
+                m
+                for m in self._members.values()
+                if m.status != MemberStatus.DEAD and m.node_id != self.config.node_id
+            ]
+            if members:
+                await asyncio.gather(*(self._send_heartbeat(m) for m in members))
             self._mark_suspect_dead()
             await asyncio.sleep(self.config.membership.heartbeat_interval)
 

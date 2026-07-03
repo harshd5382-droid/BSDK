@@ -13,6 +13,7 @@ import yaml
 from pydantic import BaseModel
 
 from daios_protocol.config import (
+    DistributionConfig,
     DiscoveryConfig,
     InferenceConfig,
     NetworkConfig,
@@ -126,6 +127,31 @@ def _resolve_gpu_layers(backend: str) -> int:
     return 99 if _has_nvidia_gpu() else 0
 
 
+def _coordinator_distribution(role: NodeRole) -> DistributionConfig | None:
+    """Workload-balancing policy that keeps the coordinator workable.
+
+    Only coordinators/hybrids place tensors, so only they need a distribution
+    policy. Workers get ``None`` (unchanged legacy behavior).
+    """
+    if role not in (NodeRole.COORDINATOR, NodeRole.HYBRID):
+        return None
+    return DistributionConfig(
+        policy="worker_preferred",
+        # Keep a healthy headroom on the master so the OS / dashboard / editor
+        # stay responsive while workers carry the model.
+        coordinator_reserve_ram_gb=6.0,
+        coordinator_reserve_vram_gb=1.0,
+        worker_reserve_ram_gb=2.0,
+        worker_reserve_vram_gb=0.5,
+        # Demote coordinator-local devices so workers carry the bulk of the
+        # model; 0.2 = a local device needs ~5x the usable memory of a worker
+        # to attract the same share.
+        coordinator_weight_scale=0.2,
+        wait_for_workers_seconds=30.0,
+        restart_debounce_seconds=10.0,
+    )
+
+
 def build_node_config(
     req: StartRequest,
     node_id: str | None = None,
@@ -170,6 +196,14 @@ def build_node_config(
         threads=_default_threads(),
         rpc_cache=True,
         tensor_split=tensor_split,
+        # Coordinators push model tensors onto worker RPC devices and keep a
+        # RAM reserve on this PC, so a 14B-class model does not exhaust the
+        # master's memory and the master stays usable for the dashboard/OS.
+        # `worker_preferred` demotes coordinator-local devices via
+        # coordinator_weight_scale; with discovery it also defers llama-server
+        # start until workers are pooled, so the model never loads onto the
+        # master alone. Explicit tensor_split still wins (see inference.py).
+        distribution=_coordinator_distribution(req.role),
     )
 
     # When discovery is enabled, bind to all interfaces so other PCs on the LAN

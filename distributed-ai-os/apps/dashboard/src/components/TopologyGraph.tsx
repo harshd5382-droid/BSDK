@@ -53,12 +53,19 @@ export default function TopologyGraph({ status, cluster }: Props) {
     );
   }
 
-  const peer = cluster?.peers[0];
-  const connected = isWorker ? inbound > 0 : (peer?.reachable ?? false);
+  const peers = cluster?.peers ?? [];
+  const reachablePeers = peers.filter((p) => p.reachable);
+  // For a worker node, "connected" is inbound RPC traffic from a coordinator.
+  // For a coordinator, it is pooled as long as at least one worker peer is
+  // reachable. Showing only peers[0] used to hide the second worker in a
+  // 2-worker cluster; aggregate over every configured peer instead.
+  const connected = isWorker
+    ? inbound > 0
+    : reachablePeers.length > 0;
 
   return (
     <div className="relative flex items-center justify-center gap-0 py-12 border border-hairline bg-surface-soft overflow-hidden">
-      <div className="relative flex items-center">
+      <div className="relative flex flex-wrap items-center justify-center gap-y-6">
         <NodeBox
           label="This PC"
           sub={isWorker ? "Worker" : "Coordinator"}
@@ -66,21 +73,35 @@ export default function TopologyGraph({ status, cluster }: Props) {
           highlight
         />
 
-        <ConnectionLine
-          connected={connected}
-          latency={isWorker ? null : peer?.latency_ms}
-          idleLabel={isWorker ? "listening…" : "waiting…"}
-        />
-
-        <NodeBox
-          label={
-            isWorker
-              ? (cluster?.coordinator_ip ?? "Remote PC")
-              : (peer?.host ?? "Other PC")
-          }
-          sub={isWorker ? "Coordinator" : "Worker"}
-          active={connected}
-        />
+        {peers.length === 0 ? (
+          <>
+            <ConnectionLine
+              connected={connected}
+              latency={null}
+              idleLabel={isWorker ? "listening…" : "waiting…"}
+            />
+            <NodeBox
+              label={isWorker ? "Remote PC" : "Other PC"}
+              sub={isWorker ? "Coordinator" : "Worker"}
+              active={connected}
+            />
+          </>
+        ) : (
+          peers.map((peer) => (
+            <div key={`${peer.host}:${peer.rpc_port}`} className="flex items-center">
+              <ConnectionLine
+                connected={isWorker ? connected : peer.reachable}
+                latency={isWorker ? null : peer.latency_ms}
+                idleLabel={isWorker ? "listening…" : "waiting…"}
+              />
+              <NodeBox
+                label={isWorker ? (cluster?.coordinator_ip ?? "Remote PC") : peer.host}
+                sub={isWorker ? "Coordinator" : "Worker"}
+                active={isWorker ? connected : peer.reachable}
+              />
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
