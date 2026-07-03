@@ -108,6 +108,44 @@ def parse_device_listing(text: str) -> list[ProbedDevice]:
     return devices
 
 
+def synthesize_probed_devices(
+    rpc_endpoints: list[str],
+    worker_caps: dict[str, NodeCapabilities] | None,
+    local_ram_available_gb: float,
+) -> list[ProbedDevice]:
+    """Build a device list from gossip capabilities when ``--list-devices`` fails.
+
+    The probe subprocess can time out or fail with multiple RPC endpoints even
+    though llama-server would start fine. Estimated memory is enough to apply
+    ``worker_preferred`` / ``--tensor-split`` instead of falling back to
+    llama.cpp's default proportional split.
+    """
+    worker_caps = worker_caps or {}
+    local_mib = max(1.0, local_ram_available_gb) * _MIB
+    devices = [
+        ProbedDevice(
+            name="CPU",
+            description="coordinator (estimated)",
+            total_mib=local_mib,
+            free_mib=local_mib,
+        )
+    ]
+    for ep in rpc_endpoints:
+        host = ep.rsplit(":", 1)[0]
+        caps = worker_caps.get(host)
+        gb = caps.ram_available_gb if caps and caps.ram_available_gb else 8.0
+        mib = max(1.0, gb) * _MIB
+        devices.append(
+            ProbedDevice(
+                name=f"RPC[{ep}]",
+                description=f"{host} (estimated)",
+                total_mib=mib,
+                free_mib=mib,
+            )
+        )
+    return devices
+
+
 def probe_llama_devices(
     binary: str,
     rpc_endpoints: list[str],

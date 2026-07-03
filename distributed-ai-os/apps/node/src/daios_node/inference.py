@@ -32,6 +32,7 @@ from daios_node.allocation import (
     parse_device_listing,
     probe_llama_devices,
     redact_command,
+    synthesize_probed_devices,
 )
 
 logger = logging.getLogger(__name__)
@@ -539,7 +540,71 @@ class InferenceManager:
 
     def _probe_devices(self, binary: str, rpc_endpoints: list[str]):
         """Indirection point so tests can inject fake device listings."""
-        return probe_llama_devices(binary, rpc_endpoints)
+        timeout = min(90.0, 30.0 + 15.0 * len(rpc_endpoints))
+        return probe_llama_devices(binary, rpc_endpoints, timeout=timeout)
+
+    def _apply_distribution(
+        self,
+        dist,
+        binary: str,
+        rpc_endpoints: list[str],
+        tensor_split: str | None,
+    ) -> str | None:
+        """Probe devices (or estimate from capabilities) and compute tensor_split."""
+        from daios_node.resources import gather_capabilities
+
+        probed = self._probe_devices(binary, rpc_endpoints)
+        estimate_reason: str | None = None
+        if probed is None and rpc_endpoints:
+            local_gb = gather_capabilities(self.config).ram_available_gb or 4.0
+            probed = synthesize_probed_devices(
+                rpc_endpoints, self._worker_caps, local_gb
+            )
+            estimate_reason = (
+                "device probe failed; split estimated from advertised capabilities"
+            )
+            logger.warning(estimate_reason)
+        elif probed is None:
+            self._fallback_reason = (
+                "device probe failed; using llama.cpp default proportional split"
+            )
+            logger.warning(self._fallback_reason)
+            return tensor_split
+
+        result = compute_allocation(
+            dist,
+            probed,
+            self.config.node_id,
+            worker_caps=self._worker_caps,
+            rtt_ms_by_host=self._worker_rtt,
+        )
+        self._last_devices = result.devices
+        self._fallback_reason = estimate_reason or result.fallback_reason
+        for alloc in result.devices:
+            if alloc.excluded_reason:
+                logger.warning(
+                    "Device %s excluded from allocation: %s",
+                    alloc.name,
+                    alloc.excluded_reason,
+                )
+            else:
+                logger.info(
+                    "Device %s (%s, %s): free %.1f GB, usable %.1f GB, "
+                    "weight %.4f (%.1f%% of model tensors, estimated)",
+                    alloc.name,
+                    alloc.kind,
+                    alloc.memory_type,
+                    alloc.free_gb or 0.0,
+                    alloc.usable_gb,
+                    alloc.weight,
+                    alloc.share_percent or 0.0,
+                )
+        if self.config.inference.tensor_split:
+            logger.info(
+                "inference.tensor_split is set explicitly; overriding computed split"
+            )
+            return tensor_split
+        return result.tensor_split or tensor_split
 
     def rpc_server_devices(self) -> list[str]:
         """Devices the local ggml-rpc-server exposes, parsed from its startup
@@ -647,47 +712,7 @@ class InferenceManager:
             for ep, reason in excluded.items():
                 logger.warning("Excluding RPC endpoint %s: %s", ep, reason)
 
-            probed = self._probe_devices(binary, rpc_endpoints)
-            if probed is None:
-                self._fallback_reason = (
-                    "device probe failed; using llama.cpp default proportional split"
-                )
-                logger.warning(self._fallback_reason)
-            else:
-                result = compute_allocation(
-                    dist,
-                    probed,
-                    self.config.node_id,
-                    worker_caps=self._worker_caps,
-                    rtt_ms_by_host=self._worker_rtt,
-                )
-                self._last_devices = result.devices
-                self._fallback_reason = result.fallback_reason
-                for alloc in result.devices:
-                    if alloc.excluded_reason:
-                        logger.warning(
-                            "Device %s excluded from allocation: %s",
-                            alloc.name,
-                            alloc.excluded_reason,
-                        )
-                    else:
-                        logger.info(
-                            "Device %s (%s, %s): free %.1f GB, usable %.1f GB, "
-                            "weight %.4f (%.1f%% of model tensors, estimated)",
-                            alloc.name,
-                            alloc.kind,
-                            alloc.memory_type,
-                            alloc.free_gb or 0.0,
-                            alloc.usable_gb,
-                            alloc.weight,
-                            alloc.share_percent or 0.0,
-                        )
-                if inf.tensor_split:
-                    logger.info(
-                        "inference.tensor_split is set explicitly; overriding computed split"
-                    )
-                elif result.tensor_split:
-                    tensor_split = result.tensor_split
+            tensor_split = self._apply_distribution(dist, binary, rpc_endpoints, tensor_split)
 
         cmd = [
             binary,

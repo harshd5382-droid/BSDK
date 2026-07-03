@@ -204,7 +204,11 @@ export default function ChatBot() {
                 }`}
               >
                 {msg.content || (
-                  <span className="text-muted animate-pulse">…</span>
+                  <span className="text-muted animate-pulse">
+                    {loading && msg.role === "assistant"
+                      ? "Generating…"
+                      : "…"}
+                  </span>
                 )}
               </div>
             </motion.div>

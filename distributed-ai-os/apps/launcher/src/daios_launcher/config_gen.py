@@ -28,6 +28,10 @@ from daios_protocol.config import (
 # Context window. 131072 = full native 128k context for Qwen-class models.
 # Note: a larger context grows the KV cache and can slow per-token speed on CPU/RPC.
 INFERENCE_CONTEXT_CAP = 131072
+# Coordinators pooling worker RPC must use a modest context — 128k KV cache on a
+# 14B model across CPU/RPC can take many minutes to allocate or OOM, which looks
+# like "loading model" forever in chat. Matches coordinator-distributed.yaml.
+DISTRIBUTED_CONTEXT_CAP = 4096
 DEFAULT_CHAT_MAX_TOKENS = 512
 
 
@@ -131,14 +135,17 @@ def _default_threads() -> int:
     return max(1, (os.cpu_count() or 2) - 1)
 
 
-def _resolve_context_size(model_path: str | None, backend: str) -> int:
-    """Cap context for fast CPU/RPC inference (native 128k is far too large)."""
+def _resolve_context_size(
+    model_path: str | None, backend: str, *, distributed: bool = False
+) -> int:
+    """Cap context for inference. Distributed CPU/RPC runs use a small cap."""
     if backend != "llama.cpp" or not model_path:
         return 0
     native = infer_context_size(model_path)
+    cap = DISTRIBUTED_CONTEXT_CAP if distributed else INFERENCE_CONTEXT_CAP
     if native is None:
-        return INFERENCE_CONTEXT_CAP
-    return min(native, INFERENCE_CONTEXT_CAP)
+        return cap
+    return min(native, cap)
 
 
 def _default_node_id(role: NodeRole, api_port: int) -> str:
@@ -216,6 +223,10 @@ def build_node_config(
 
     resolved_model = _resolve_model_path(req.model_path, root)
 
+    distributed = req.role in (NodeRole.COORDINATOR, NodeRole.HYBRID) and (
+        req.discovery_enabled or bool(peer_hosts)
+    )
+
     # Resolve workload balancing: explicit tensor_split wins; otherwise derive it
     # from worker_share for the known peer count (coordinator only).
     tensor_split = req.tensor_split
@@ -232,7 +243,7 @@ def build_node_config(
         model_path=resolved_model,
         llama_server_port=8080,
         n_gpu_layers=_resolve_gpu_layers(req.backend),
-        context_size=_resolve_context_size(resolved_model, req.backend),
+        context_size=_resolve_context_size(resolved_model, req.backend, distributed=distributed),
         threads=_default_threads(),
         rpc_cache=True,
         tensor_split=tensor_split,

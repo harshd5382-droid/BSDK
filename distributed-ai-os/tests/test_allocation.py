@@ -271,3 +271,33 @@ def test_unknown_worker_capabilities_handled_gracefully():
     assert dev.memory_type == "unknown"
     assert dev.reserve_gb == 1.0
     assert dev.usable_gb == pytest.approx(7.0)
+
+
+def test_synthesize_probed_devices_worker_preferred_split():
+    from daios_node.allocation import synthesize_probed_devices
+    from daios_protocol.health import NodeCapabilities
+
+    caps = {
+        "10.0.0.2": NodeCapabilities(
+            node_id="w1",
+            ram_available_gb=16.0,
+            rpc_devices=["CPU"],
+        ),
+    }
+    probed = synthesize_probed_devices(
+        ["10.0.0.2:50052"], caps, local_ram_available_gb=8.0
+    )
+    assert len(probed) == 2
+    assert probed[0].name == "CPU"
+    assert probed[1].name == "RPC[10.0.0.2:50052]"
+
+    result = compute_allocation(
+        _dist(policy="worker_preferred", coordinator_weight_scale=0.2),
+        probed,
+        "coord",
+        worker_caps=caps,
+    )
+    assert result.tensor_split is not None
+    # Workers should dominate the split vs coordinator CPU.
+    parts = [float(x) for x in result.tensor_split.split(",")]
+    assert parts[1] > parts[0]

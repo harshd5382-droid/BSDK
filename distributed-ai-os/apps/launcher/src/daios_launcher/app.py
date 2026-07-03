@@ -615,6 +615,7 @@ class LauncherApp:
             if not self._http:
                 raise HTTPException(status_code=503, detail="Launcher not ready")
             api_port = await self._active_api_port()
+            await self._ensure_inference_ready(api_port)
 
             if req.messages:
                 messages = [m.model_dump() for m in req.messages]
@@ -633,18 +634,34 @@ class LauncherApp:
                 "max_tokens": req.max_tokens if req.max_tokens is not None else DEFAULT_CHAT_MAX_TOKENS,
             }
             url = f"http://127.0.0.1:{api_port}/v1/chat/completions"
+            # Distributed model load + first token can take several minutes on CPU.
+            chat_timeout = httpx.Timeout(600.0, connect=15.0)
 
             if req.stream:
 
                 async def stream_proxy():
-                    async with self._http.stream("POST", url, json=body) as resp:
+                    async with self._http.stream(
+                        "POST", url, json=body, timeout=chat_timeout
+                    ) as resp:
+                        if resp.status_code >= 400:
+                            detail = (await resp.aread()).decode("utf-8", errors="replace")
+                            msg = json.dumps(
+                                {
+                                    "error": {
+                                        "message": detail or f"HTTP {resp.status_code}",
+                                        "type": "inference_error",
+                                    }
+                                }
+                            )
+                            yield f"data: {msg}\n\n".encode()
+                            return
                         async for chunk in resp.aiter_bytes():
                             yield chunk
 
                 return StreamingResponse(stream_proxy(), media_type="text/event-stream")
 
             try:
-                resp = await self._http.post(url, json=body)
+                resp = await self._http.post(url, json=body, timeout=chat_timeout)
             except httpx.HTTPError as exc:
                 raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -738,6 +755,47 @@ class LauncherApp:
                 pass
         detail = _sanitize_start_error(node.last_error) or "Node not running"
         raise HTTPException(status_code=503, detail=detail)
+
+    async def _ensure_inference_ready(self, api_port: int) -> None:
+        """Fail fast when chat is sent before llama-server can serve."""
+        if not self._http:
+            raise HTTPException(status_code=503, detail="Launcher not ready")
+        try:
+            resp = await self._http.get(
+                f"http://127.0.0.1:{api_port}/health",
+                timeout=5.0,
+            )
+            health = resp.json()
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=503, detail=f"Node health check failed: {exc}") from exc
+        inf = health.get("inference", {})
+        state = inf.get("llama_server")
+        pending = inf.get("llama_server_pending", False)
+        if state == "running":
+            return
+        if pending:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Model is still loading across workers (waiting for RPC pool). "
+                    "Wait up to 30 seconds, then try again."
+                ),
+            )
+        if state == "failed":
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "llama-server failed to load the model. Click Restart on the "
+                    "coordinator and check that worker PCs are running."
+                ),
+            )
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Model is not ready. Start or restart the coordinator with workers "
+                "connected, then wait until the Distribution panel shows running."
+            ),
+        )
 
     def _mount_dashboard(self, app: FastAPI) -> None:
         dist = self.dashboard_dist

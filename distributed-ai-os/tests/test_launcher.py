@@ -10,6 +10,8 @@ from fastapi.testclient import TestClient
 
 from daios_protocol.config import NodeRole, load_config
 from daios_launcher.config_gen import (
+    DISTRIBUTED_CONTEXT_CAP,
+    INFERENCE_CONTEXT_CAP,
     StartRequest,
     _default_node_id,
     _default_threads,
