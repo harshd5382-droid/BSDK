@@ -74,6 +74,13 @@ DLLs from elsewhere, point `-BinDir` at that folder and skip step 1.)
 > Building the exe requires Python 3.11+ and internet **on the dev PC** (PyInstaller
 > + package deps come from PyPI). That's fine — this is your online machine. The
 > *worker* PC needs neither.
+>
+> **mDNS auto-discovery:** `build-exe.ps1` installs `zeroconf` before PyInstaller
+> runs. If you build the exe without it, the worker logs *"Discovery enabled but
+> zeroconf not installed; falling back to manual peers"* and coordinators will not
+> auto-discover it — manual IP entry still works. After rebuilding, confirm in
+> `%LOCALAPPDATA%\BSDK\logs\launcher-worker-8001.log` that you see
+> `mDNS discovery started for cluster daios on ...` (not the zeroconf warning).
 
 ### 2b. Copy to the worker PC
 
@@ -283,6 +290,10 @@ placeholder). Rebuild the exe with the binaries **bundled**:
 ```
 
 ### Worker installs but the coordinator can't see it
+- **Exe built without `zeroconf` bundled** → node log shows *"Discovery enabled but
+  zeroconf not installed; falling back to manual peers"*. Rebuild with
+  `build-exe.ps1` (it installs zeroconf automatically) and reinstall the worker.
+  Confirm the log shows `mDNS discovery started for cluster daios on ...`.
 - Windows says the network is **Public** → auto-discovery is blocked. Set the
   profile to **Private**: Settings > Network & internet > Wi-Fi/Ethernet > Network
   profile type.

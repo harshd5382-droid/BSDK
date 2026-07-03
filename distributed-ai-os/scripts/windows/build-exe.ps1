@@ -21,11 +21,15 @@ function Assert-LastExitCode([string]$What) {
 $python = (Get-Command python -ErrorAction SilentlyContinue).Source
 if (-not $python) { Write-Error "Python 3.11+ is required to build the exe." }
 
-Write-Host "==> Installing BSDK packages (all three) + PyInstaller..."
-& $python -m pip install -e packages/protocol -e apps/node -e apps/launcher
+Write-Host "==> Installing BSDK packages (all three) + PyInstaller + zeroconf..."
+& $python -m pip install -e packages/protocol -e "apps/node[discovery]" -e apps/launcher
 Assert-LastExitCode "pip install (BSDK packages)"
-& $python -m pip install pyinstaller
-Assert-LastExitCode "pip install pyinstaller"
+& $python -m pip install pyinstaller zeroconf
+Assert-LastExitCode "pip install pyinstaller + zeroconf"
+
+Write-Host "==> Verifying zeroconf (required for mDNS auto-discovery in the exe)..."
+& $python -c "import zeroconf; print('zeroconf', zeroconf.__version__)"
+Assert-LastExitCode "zeroconf import check"
 
 # Stage prebuilt native binaries for bundling, if provided.
 $pkgBin = Join-Path $Root "packaging\windows\bin"
