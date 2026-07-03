@@ -32,7 +32,6 @@ from daios_node.allocation import (
     parse_device_listing,
     probe_llama_devices,
     redact_command,
-    synthesize_probed_devices,
 )
 
 logger = logging.getLogger(__name__)
@@ -540,7 +539,10 @@ class InferenceManager:
 
     def _probe_devices(self, binary: str, rpc_endpoints: list[str]):
         """Indirection point so tests can inject fake device listings."""
-        timeout = min(90.0, 30.0 + 15.0 * len(rpc_endpoints))
+        # Keep the probe short: a long probe blocks llama-server startup and
+        # looks like "loading model" forever in chat. If it doesn't return
+        # quickly we fall back to llama.cpp's default split (just --rpc).
+        timeout = 15.0
         return probe_llama_devices(binary, rpc_endpoints, timeout=timeout)
 
     def _apply_distribution(
@@ -550,21 +552,15 @@ class InferenceManager:
         rpc_endpoints: list[str],
         tensor_split: str | None,
     ) -> str | None:
-        """Probe devices (or estimate from capabilities) and compute tensor_split."""
-        from daios_node.resources import gather_capabilities
+        """Probe devices and compute tensor_split.
 
+        On probe failure we do NOT synthesize a split — we fall back to
+        llama.cpp's default proportional split (just ``--rpc``, no
+        ``--tensor-split``), which is the fast path that always worked.
+        The distribution policy only applies when the probe succeeds quickly.
+        """
         probed = self._probe_devices(binary, rpc_endpoints)
-        estimate_reason: str | None = None
-        if probed is None and rpc_endpoints:
-            local_gb = gather_capabilities(self.config).ram_available_gb or 4.0
-            probed = synthesize_probed_devices(
-                rpc_endpoints, self._worker_caps, local_gb
-            )
-            estimate_reason = (
-                "device probe failed; split estimated from advertised capabilities"
-            )
-            logger.warning(estimate_reason)
-        elif probed is None:
+        if probed is None:
             self._fallback_reason = (
                 "device probe failed; using llama.cpp default proportional split"
             )
@@ -579,7 +575,7 @@ class InferenceManager:
             rtt_ms_by_host=self._worker_rtt,
         )
         self._last_devices = result.devices
-        self._fallback_reason = estimate_reason or result.fallback_reason
+        self._fallback_reason = result.fallback_reason
         for alloc in result.devices:
             if alloc.excluded_reason:
                 logger.warning(

@@ -181,10 +181,10 @@ def test_probe_failure_falls_back_to_default_split():
         manager._start_llama_server()
     cmd = manager.llama_server.command
     assert "--rpc" in cmd
-    # Probe failed but RPC endpoints exist — split is estimated from capabilities.
-    assert "--tensor-split" in cmd
-    reason = manager.distribution_diagnostics().fallback_reason or ""
-    assert "probe failed" in reason
+    # Probe failed → no tensor-split, fall back to llama.cpp default split
+    # (the fast path that always worked). Don't synthesize a risky split.
+    assert "--tensor-split" not in cmd
+    assert "probe failed" in manager.distribution_diagnostics().fallback_reason
 
 
 def test_secrets_in_extra_args_redacted_in_diagnostics_but_not_process():
