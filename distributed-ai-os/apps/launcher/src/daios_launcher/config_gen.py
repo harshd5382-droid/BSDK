@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import re
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -10,7 +12,7 @@ from pathlib import Path
 from daios_launcher.gguf_context import infer_context_size
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from daios_protocol.config import (
     DistributionConfig,
@@ -32,6 +34,10 @@ DEFAULT_CHAT_MAX_TOKENS = 512
 class StartRequest(BaseModel):
     role: NodeRole
     peer_host: str | None = None
+    # Multiple manually-entered worker IPs (Gen 1 static peers). When present,
+    # these are used instead of ``peer_host`` so the dashboard can connect more
+    # than one worker PC. Each becomes a static PeerConfig entry.
+    peer_hosts: list[str] = Field(default_factory=list)
     peer_rpc_port: int = 50052
     peer_api_port: int = 8001
     model_path: str | None = None
@@ -45,6 +51,20 @@ class StartRequest(BaseModel):
     # on this PC. `tensor_split` (raw llama.cpp value, e.g. "20,80") overrides it.
     worker_share: int | None = None
     tensor_split: str | None = None
+
+    def effective_peer_hosts(self) -> list[str]:
+        """Resolved, de-duplicated, non-empty list of worker IPs to peer with."""
+        raw = self.peer_hosts if self.peer_hosts else ([self.peer_host] if self.peer_host else [])
+        seen: set[str] = set()
+        out: list[str] = []
+        for host in raw:
+            if not host:
+                continue
+            h = host.strip()
+            if h and h not in seen:
+                seen.add(h)
+                out.append(h)
+        return out
 
 
 def compute_tensor_split(worker_share: int, num_workers: int = 1) -> str:
@@ -121,6 +141,24 @@ def _resolve_context_size(model_path: str | None, backend: str) -> int:
     return min(native, INFERENCE_CONTEXT_CAP)
 
 
+def _default_node_id(role: NodeRole, api_port: int) -> str:
+    """Per-machine node id safe for YAML, gossip, and mDNS registration.
+
+    ``{role}-{api_port}`` alone collides when every worker uses the default
+    api_port 8001 — both PCs try to register ``daios-worker-8001`` on mDNS and
+    only one advertisement survives (the other runs discover-only).
+    """
+    try:
+        hostname = socket.gethostname().lower()
+    except OSError:
+        hostname = ""
+    slug = re.sub(r"[^a-z0-9]+", "-", hostname).strip("-")
+    if not slug:
+        slug = "host"
+    slug = slug[:40]
+    return f"{role.value}-{slug}-{api_port}"
+
+
 def _resolve_gpu_layers(backend: str) -> int:
     if backend != "llama.cpp":
         return 0
@@ -158,16 +196,18 @@ def build_node_config(
     project_root: Path | None = None,
 ) -> NodeConfig:
     root = project_root or Path.cwd()
+    peer_hosts = req.effective_peer_hosts()
     peers: list[PeerConfig] = []
-    if not req.discovery_enabled and req.role in (NodeRole.COORDINATOR, NodeRole.HYBRID) and req.peer_host:
-        peers.append(
-            PeerConfig(
-                id="peer-1",
-                host=req.peer_host,
-                rpc_port=req.peer_rpc_port,
-                api_port=req.peer_api_port,
+    if not req.discovery_enabled and req.role in (NodeRole.COORDINATOR, NodeRole.HYBRID):
+        for idx, host in enumerate(peer_hosts):
+            peers.append(
+                PeerConfig(
+                    id=f"peer-{idx + 1}",
+                    host=host,
+                    rpc_port=req.peer_rpc_port,
+                    api_port=req.peer_api_port,
+                )
             )
-        )
 
     discovery = DiscoveryConfig(
         enabled=req.discovery_enabled,
@@ -215,7 +255,7 @@ def build_node_config(
         bind_host = "0.0.0.0" if req.role == NodeRole.WORKER else "127.0.0.1"
 
     return NodeConfig(
-        node_id=node_id or f"{req.role.value}-{req.api_port}",
+        node_id=node_id or _default_node_id(req.role, req.api_port),
         role=req.role,
         network=NetworkConfig(
             bind_host=bind_host,

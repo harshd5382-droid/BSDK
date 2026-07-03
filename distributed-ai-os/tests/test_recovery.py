@@ -59,6 +59,76 @@ def test_inference_restart_budget_exhaustion(monkeypatch):
     assert "exceeded restart budget" in manager.llama_server.last_error
 
 
+def test_deferred_start_reports_pending_status():
+    """A coordinator that defers llama-server (distribution + discovery, no
+    workers yet) must report ``llama_server_pending=True`` so the launcher's
+    start gate does not treat the waiting period as a failure."""
+    from daios_protocol.config import DistributionConfig
+
+    config = _config(
+        inference={
+            "backend": "llama.cpp",
+            "max_restarts": 2,
+            "auto_restart": True,
+            "distribution": DistributionConfig(wait_for_workers_seconds=30.0),
+        },
+    )
+    app = NodeApp(config)
+    manager = app.inference
+    # Simulate the deferral that InferenceManager.start() sets when no RPC
+    # endpoints are available yet (discovery has not found workers).
+    manager._llama_start_deferred = True
+    status = manager.status()
+    assert status.llama_server_pending is True
+
+    manager._llama_start_deferred = False
+    assert manager.status().llama_server_pending is False
+
+
+def test_suspect_workers_stay_pooled():
+    """A SUSPECT worker (transient heartbeat miss) must remain in the RPC pool
+    so a brief blip does not drop it from --rpc and force a model reload."""
+    config = _config()
+    discovery = DiscoveryService(config)
+    registry = CoordinatorRegistry(config)
+    membership = MembershipService(config, discovery, registry)
+
+    from daios_protocol.health import MemberInfo, MemberStatus
+
+    alive = MemberInfo(
+        node_id="alive-1",
+        host="10.0.0.2",
+        api_port=8001,
+        rpc_port=50052,
+        role="worker",
+        status=MemberStatus.ALIVE,
+        last_seen=datetime.now(timezone.utc),
+    )
+    suspect = MemberInfo(
+        node_id="suspect-1",
+        host="10.0.0.3",
+        api_port=8002,
+        rpc_port=50052,
+        role="worker",
+        status=MemberStatus.SUSPECT,
+        last_seen=datetime.now(timezone.utc) - timedelta(seconds=1.0),
+    )
+    dead = MemberInfo(
+        node_id="dead-1",
+        host="10.0.0.4",
+        api_port=8003,
+        rpc_port=50052,
+        role="worker",
+        status=MemberStatus.DEAD,
+        last_seen=datetime.now(timezone.utc) - timedelta(seconds=10.0),
+    )
+    membership._members = {"a": alive, "s": suspect, "d": dead}
+    hosts = membership.get_alive_worker_hosts()
+    assert "10.0.0.2" in hosts
+    assert "10.0.0.3" in hosts
+    assert "10.0.0.4" not in hosts
+
+
 @pytest.mark.asyncio
 async def test_proxy_retry_recovers_after_connect_errors(monkeypatch):
     app = NodeApp(_config(discovery={"enabled": False}))

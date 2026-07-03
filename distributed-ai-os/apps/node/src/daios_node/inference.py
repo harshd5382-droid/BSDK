@@ -350,6 +350,7 @@ class InferenceManager:
             rpc_server=rpc_state,
             model_path=self.config.inference.model_path,
             openai_base_url=openai_url,
+            llama_server_pending=self._llama_start_deferred,
         )
 
     def uptime_seconds(self) -> float:

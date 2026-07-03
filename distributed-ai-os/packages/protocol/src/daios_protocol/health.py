@@ -195,6 +195,11 @@ class InferenceStatus(BaseModel):
     rpc_server: ProcessState = ProcessState.STOPPED
     model_path: str | None = None
     openai_base_url: str | None = None
+    # True when a coordinator is intentionally holding off starting llama-server
+    # until discovery pools worker RPC endpoints (distribution + discovery). The
+    # launcher's start gate must not treat this as a failure — the process is
+    # not running yet by design.
+    llama_server_pending: bool = False
 
 
 class NodeHealth(BaseModel):

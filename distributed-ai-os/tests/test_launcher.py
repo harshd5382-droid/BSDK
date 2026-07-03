@@ -9,7 +9,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from daios_protocol.config import NodeRole, load_config
-from daios_launcher.config_gen import StartRequest, _default_threads, build_node_config, write_runtime_config
+from daios_launcher.config_gen import (
+    StartRequest,
+    _default_node_id,
+    _default_threads,
+    build_node_config,
+    write_runtime_config,
+)
 from daios_launcher.system_info import gather_system_info, get_lan_ip, is_local_address
 from daios_launcher.validation import validate_start_request
 
@@ -51,6 +57,59 @@ def test_build_worker_config():
     assert config.runs_rpc_server
     assert not config.runs_coordinator
     assert config.network.bind_host == "0.0.0.0"
+
+
+def test_build_coordinator_config_multiple_peers():
+    req = StartRequest(
+        role=NodeRole.COORDINATOR,
+        peer_hosts=["192.168.1.42", "192.168.1.43"],
+        backend="mock",
+    )
+    config = build_node_config(req, node_id="test-coord-multi", project_root=ROOT)
+    assert len(config.peers) == 2
+    assert [p.host for p in config.peers] == ["192.168.1.42", "192.168.1.43"]
+
+
+def test_peer_hosts_dedup_and_fallback_to_peer_host():
+    req = StartRequest(
+        role=NodeRole.COORDINATOR,
+        peer_host="192.168.1.42",
+        peer_hosts=["192.168.1.43", " 192.168.1.43 ", "", "192.168.1.44"],
+        backend="mock",
+    )
+    assert req.effective_peer_hosts() == ["192.168.1.43", "192.168.1.44"]
+
+    req_single = StartRequest(role=NodeRole.COORDINATOR, peer_host="10.0.0.2")
+    assert req_single.effective_peer_hosts() == ["10.0.0.2"]
+
+
+def test_coordinator_gets_worker_preferred_distribution():
+    req = StartRequest(role=NodeRole.COORDINATOR, backend="llama.cpp")
+    config = build_node_config(req, node_id="test-coord-dist")
+    assert config.inference.distribution is not None
+    assert config.inference.distribution.policy == "worker_preferred"
+    assert config.inference.distribution.coordinator_reserve_ram_gb >= 4.0
+
+
+def test_worker_has_no_distribution():
+    req = StartRequest(role=NodeRole.WORKER, backend="llama.cpp")
+    config = build_node_config(req, node_id="test-worker-dist")
+    assert config.inference.distribution is None
+
+
+def test_default_node_id_includes_hostname(monkeypatch):
+    monkeypatch.setattr("daios_launcher.config_gen.socket.gethostname", lambda: "My-PC-2")
+    assert _default_node_id(NodeRole.WORKER, 8001) == "worker-my-pc-2-8001"
+
+
+def test_build_worker_auto_node_id_unique_per_hostname(monkeypatch):
+    """Workers on different PCs must not all get worker-8001 (mDNS collision)."""
+    monkeypatch.setattr("daios_launcher.config_gen.socket.gethostname", lambda: "office-pc")
+    config = build_node_config(
+        StartRequest(role=NodeRole.WORKER, backend="mock", api_port=8001),
+    )
+    assert config.node_id == "worker-office-pc-8001"
+    assert config.node_id != "worker-8001"
 
 
 def test_build_node_config_auto_detects_threads():

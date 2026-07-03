@@ -246,24 +246,30 @@ class LauncherApp:
             if validation_error:
                 raise HTTPException(status_code=400, detail=validation_error)
 
-            peer_config: PeerConfig | None = None
-            if req.role in (NodeRole.COORDINATOR, NodeRole.HYBRID) and req.peer_host and req.backend != "mock":
-                peer_config = PeerConfig(
-                    id="preflight",
-                    host=req.peer_host.strip(),
-                    rpc_port=req.peer_rpc_port,
-                    api_port=req.peer_api_port,
-                )
-                peer_status = await wait_for_peer(peer_config, timeout=20.0)
-                if not peer_status.reachable or peer_status.error:
-                    detail = (
-                        f"Worker not reachable at {req.peer_host}:{req.peer_rpc_port}. "
-                        "On the other PC, open this dashboard → Help another PC → Start Worker, "
-                        "then try again."
+            # Preflight: probe every manually-entered worker IP (Gen 1). With
+            # Auto Discovery we skip this — workers appear via mDNS at runtime.
+            if (
+                req.role in (NodeRole.COORDINATOR, NodeRole.HYBRID)
+                and not req.discovery_enabled
+                and req.backend != "mock"
+            ):
+                for idx, host in enumerate(req.effective_peer_hosts()):
+                    peer_config = PeerConfig(
+                        id=f"preflight-{idx + 1}",
+                        host=host,
+                        rpc_port=req.peer_rpc_port,
+                        api_port=req.peer_api_port,
                     )
-                    if peer_status.error:
-                        detail += f" ({peer_status.error})"
-                    raise HTTPException(status_code=503, detail=detail)
+                    peer_status = await wait_for_peer(peer_config, timeout=20.0)
+                    if not peer_status.reachable or peer_status.error:
+                        detail = (
+                            f"Worker not reachable at {host}:{req.peer_rpc_port}. "
+                            "On the other PC, open this dashboard → Help another PC → Start Worker, "
+                            "then try again."
+                        )
+                        if peer_status.error:
+                            detail += f" ({peer_status.error})"
+                        raise HTTPException(status_code=503, detail=detail)
 
             config = await asyncio.to_thread(
                 build_node_config, req, project_root=self.project_root
@@ -284,15 +290,40 @@ class LauncherApp:
                 )
 
             if self._http and config.inference.backend != "mock":
-                await asyncio.sleep(2.0)
-                try:
-                    resp = await self._http.get(
-                        f"http://127.0.0.1:{node.api_port}/health",
-                        timeout=10.0,
-                    )
-                    health = resp.json()
-                    llama_state = health.get("inference", {}).get("llama_server")
-                    if config.runs_coordinator and llama_state in ("failed", "stopped"):
+                # A discovery+distribution coordinator intentionally defers
+                # llama-server start until workers are pooled (up to
+                # wait_for_workers_seconds). Poll instead of bailing at 2s, so
+                # we don't kill a node that is correctly waiting for workers.
+                # Only a real "failed" state aborts the start.
+                deadline = asyncio.get_event_loop().time() + 35.0
+                started_ok = False
+                while asyncio.get_event_loop().time() < deadline:
+                    await asyncio.sleep(2.0)
+                    try:
+                        resp = await self._http.get(
+                            f"http://127.0.0.1:{node.api_port}/health",
+                            timeout=10.0,
+                        )
+                        health = resp.json()
+                    except httpx.HTTPError:
+                        continue
+                    inf = health.get("inference", {})
+                    llama_state = inf.get("llama_server")
+                    pending = inf.get("llama_server_pending", False)
+                    if not config.runs_coordinator:
+                        started_ok = True
+                        break
+                    if llama_state == "running":
+                        started_ok = True
+                        break
+                    if llama_state == "failed":
+                        self.process_manager.stop_node()
+                        raise HTTPException(
+                            status_code=500,
+                            detail="llama-server failed to start.",
+                        )
+                    # stopped while pending == still waiting for workers; keep polling.
+                    if llama_state == "stopped" and not pending:
                         self.process_manager.stop_node()
                         raise HTTPException(
                             status_code=500,
@@ -301,8 +332,13 @@ class LauncherApp:
                                 "and port 50052 is open in its firewall."
                             ),
                         )
-                except httpx.HTTPError:
-                    pass
+                if not started_ok and config.runs_coordinator:
+                    # Timed out waiting; the node stays up — the recovery loop
+                    # will (re)start llama-server once a worker is discovered.
+                    logger.warning(
+                        "llama-server not running 35s after start; leaving node up so "
+                        "discovery can complete"
+                    )
 
             return {
                 "status": node.state.value,

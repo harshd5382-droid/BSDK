@@ -67,20 +67,24 @@ export default function App() {
   }, [step]);
 
   const handleStartCoordinator = useCallback(
-    async (peerHost: string, modelPath: string, discovery: boolean) => {
+    async (peerHosts: string[], modelPath: string, discovery: boolean) => {
       if (!system) return;
-      if (!discovery && isLocalPeer(peerHost, system)) {
-        setStartError(
-          `Worker IP cannot be this PC (${system.lan_ip}). Choose Worker on this machine and Coordinator on the other PC.`,
-        );
-        return;
+      if (!discovery) {
+        for (const h of peerHosts) {
+          if (isLocalPeer(h, system)) {
+            setStartError(
+              `Worker IP cannot be this PC (${system.lan_ip}). Choose Worker on this machine and Coordinator on the other PC.`,
+            );
+            return;
+          }
+        }
       }
 
       setLoading(true);
       setStartError(null);
       const req: StartRequest = {
         role: "coordinator",
-        peer_host: discovery ? undefined : peerHost.trim(),
+        peer_hosts: discovery ? undefined : peerHosts,
         peer_rpc_port: 50052,
         peer_api_port: 8001,
         model_path: modelPath || undefined,

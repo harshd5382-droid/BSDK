@@ -161,6 +161,7 @@ export type NodeRole = "coordinator" | "worker" | "hybrid";
 export interface StartRequest {
   role: NodeRole;
   peer_host?: string;
+  peer_hosts?: string[];
   peer_rpc_port?: number;
   peer_api_port?: number;
   model_path?: string;
