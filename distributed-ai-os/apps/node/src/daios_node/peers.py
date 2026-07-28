@@ -13,6 +13,33 @@ from daios_protocol.health import ModelUsage, NodeCapabilities, PeerStatus, Reso
 
 logger = logging.getLogger(__name__)
 
+# Peer health is polled every couple of seconds per peer. A fresh AsyncClient
+# per probe throws away the connection pool each time, so every poll pays a new
+# TCP handshake; one shared client keeps the connections warm.
+_client: httpx.AsyncClient | None = None
+_client_lock = asyncio.Lock()
+
+
+async def _shared_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None or _client.is_closed:
+        async with _client_lock:
+            if _client is None or _client.is_closed:
+                _client = httpx.AsyncClient(
+                    limits=httpx.Limits(
+                        max_keepalive_connections=16, keepalive_expiry=30.0
+                    )
+                )
+    return _client
+
+
+async def close_shared_client() -> None:
+    """Release the pooled peer-probe connections (node shutdown)."""
+    global _client
+    if _client is not None and not _client.is_closed:
+        await _client.aclose()
+    _client = None
+
 
 def _tcp_probe(host: str, port: int, timeout: float) -> tuple[bool, str | None]:
     """Blocking TCP connect run in a thread pool."""
@@ -55,8 +82,10 @@ async def check_peer(peer: PeerConfig, timeout: float = 3.0) -> PeerStatus:
 
     if peer.api_port:
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.get(f"http://{host}:{peer.api_port}/health")
+            client = await _shared_client()
+            response = await client.get(
+                f"http://{host}:{peer.api_port}/health", timeout=timeout
+            )
             latency_ms = (time.perf_counter() - start) * 1000.0
             if response.status_code >= 400:
                 return PeerStatus(

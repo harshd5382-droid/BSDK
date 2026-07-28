@@ -149,14 +149,24 @@ class MembershipService:
         one pooled at a time) and reloads the model onto the coordinator. So we
         keep SUSPECT workers pooled and only evict on ``DEAD``.
         """
-        hosts: list[str] = []
-        for m in self._members.values():
-            if m.status in (MemberStatus.ALIVE, MemberStatus.SUSPECT) and m.role in (
-                "worker",
-                "hybrid",
-            ):
-                hosts.append(m.host)
-        return hosts
+        return [m.host for m in self._alive_workers()]
+
+    def get_alive_worker_endpoints(self) -> list[str]:
+        """``host:rpc_port`` for every worker eligible for the RPC pool.
+
+        Same membership rule as :meth:`get_alive_worker_hosts`, but carries the
+        port each worker actually advertises instead of assuming it matches the
+        coordinator's own ``rpc_port``.
+        """
+        return [f"{m.host}:{m.rpc_port}" for m in self._alive_workers()]
+
+    def _alive_workers(self) -> list[MemberInfo]:
+        return [
+            m
+            for m in self._members.values()
+            if m.status in (MemberStatus.ALIVE, MemberStatus.SUSPECT)
+            and m.role in ("worker", "hybrid")
+        ]
 
     async def handle_heartbeat(self, msg: HeartbeatMessage) -> HeartbeatResponse:
         self._upsert_member(msg.sender)
@@ -181,22 +191,18 @@ class MembershipService:
         if msg.membership_version > self._membership_version:
             self._membership_version = msg.membership_version
 
-    async def _send_heartbeat(self, member: MemberInfo) -> None:
+    async def _send_heartbeat(
+        self, member: MemberInfo, msg: HeartbeatMessage | None = None
+    ) -> None:
         if not self._http:
             return
         start = time.perf_counter()
-        msg = HeartbeatMessage(
-            sender=self._local_member(),
-            membership_version=self._membership_version,
-            advertisement=gather_advertisement(
-                self.config,
-                current_workload=len(self.coordinator_registry.active_leases()),
-                queue_depth=self._queue_depth_fn() if self._queue_depth_fn else 0,
-                rtt_ms=self._rtt_ms,
-                capabilities=self._local_capabilities(),
-            ),
-            active_leases=self.coordinator_registry.active_leases(),
-        )
+        # Building the message samples CPU, RAM, disk, battery, and GPU. Doing
+        # that per peer (twice over, since _local_member() gathers its own
+        # advertisement) made the cost scale with cluster size for a payload
+        # that is identical for every recipient — so the caller builds it once
+        # per round and passes it in.
+        msg = msg or self._build_heartbeat()
         url = f"http://{member.host}:{member.api_port}/api/v1/internal/heartbeat"
         try:
             response = await self._http.post(url, json=msg.model_dump(mode="json"), timeout=5.0)
@@ -212,6 +218,16 @@ class MembershipService:
                 member.status = MemberStatus.ALIVE
         except httpx.HTTPError as exc:
             logger.debug("Heartbeat to %s failed: %s", member.node_id, exc)
+
+    def _build_heartbeat(self) -> HeartbeatMessage:
+        """One gossip payload, reusable for every peer in a heartbeat round."""
+        local = self._local_member()
+        return HeartbeatMessage(
+            sender=local,
+            membership_version=self._membership_version,
+            advertisement=local.advertisement,
+            active_leases=self.coordinator_registry.active_leases(),
+        )
 
     async def _heartbeat_loop(self) -> None:
         while self._running:
@@ -229,7 +245,8 @@ class MembershipService:
                 if m.status != MemberStatus.DEAD and m.node_id != self.config.node_id
             ]
             if members:
-                await asyncio.gather(*(self._send_heartbeat(m) for m in members))
+                msg = self._build_heartbeat()
+                await asyncio.gather(*(self._send_heartbeat(m, msg) for m in members))
             self._mark_suspect_dead()
             await asyncio.sleep(self.config.membership.heartbeat_interval)
 

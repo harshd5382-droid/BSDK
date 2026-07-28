@@ -189,14 +189,21 @@ class NodeConfig(BaseModel):
         """Return host:port strings for --rpc flag (local + peers).
 
         When ``peer_hosts`` is provided (Generation 2 discovery), those hosts
-        replace the static ``peers[]`` list.
+        replace the static ``peers[]`` list. Entries may be bare hosts (which
+        take this node's ``rpc_port``, the legacy behavior) or already-resolved
+        ``host:port`` pairs — a discovered worker is free to serve RPC on a
+        port other than ours, and assuming otherwise silently pools nothing.
         """
         endpoints: list[str] = []
         if self.runs_rpc_server:
             endpoints.append(f"127.0.0.1:{self.network.rpc_port}")
         if peer_hosts is not None:
             for host in peer_hosts:
-                endpoints.append(f"{host}:{self.network.rpc_port}")
+                head, sep, tail = host.rpartition(":")
+                if sep and tail.isdigit():
+                    endpoints.append(host)
+                else:
+                    endpoints.append(f"{host}:{self.network.rpc_port}")
         else:
             for peer in self.peers:
                 endpoints.append(f"{peer.host}:{peer.rpc_port}")

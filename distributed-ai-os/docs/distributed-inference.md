@@ -288,7 +288,12 @@ Even with `worker_preferred` and all layers offloaded, the coordinator
 keeps: the HTTP server and OpenAI proxy, tokenization, the sampling loop
 and logits readback for every token, ggml graph scheduling, the GGUF read
 during load, any non-offloaded layers (coordinator CPU + RAM), and the
-memory-mapped model file pages (`--mlock`). A coordinator therefore always
+memory-mapped model file pages. Those pages are mapped, not locked: `--mlock`
+is passed only for a solo coordinator whose RAM comfortably exceeds the model,
+because locking the whole model resident while pooling workers would re-impose
+the single-machine memory ceiling `--rpc` exists to escape (and, for a model
+larger than local RAM, turns the load into swap thrash that never finishes).
+A coordinator therefore always
 shows nonzero CPU/RAM activity during inference; the goal of the policy is
 to move the *model tensors, KV cache, and per-layer compute* — the bulk of
 the footprint — onto workers, not to make the coordinator idle.

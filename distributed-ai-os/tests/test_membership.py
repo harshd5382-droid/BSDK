@@ -79,3 +79,27 @@ def test_get_alive_worker_hosts(membership):
     hosts = membership.get_alive_worker_hosts()
     assert "10.0.0.2" in hosts
     assert "10.0.0.3" in hosts
+
+
+def test_get_alive_worker_endpoints_carries_each_workers_own_port(membership):
+    worker = _member("w1", "10.0.0.2")
+    worker.rpc_port = 60000
+    membership._upsert_member(worker)
+    membership._upsert_member(_member("w2", "10.0.0.3"))
+
+    assert sorted(membership.get_alive_worker_endpoints()) == [
+        "10.0.0.2:60000",
+        "10.0.0.3:50052",
+    ]
+
+
+def test_heartbeat_payload_is_built_once_per_round(membership):
+    """The gossip payload is identical for every peer; sampling CPU/RAM/disk
+    once per peer made heartbeat cost scale with cluster size."""
+    membership._upsert_member(_member("w1", "10.0.0.2"))
+    membership._upsert_member(_member("w2", "10.0.0.3"))
+
+    msg = membership._build_heartbeat()
+    assert msg.sender.node_id == "coord-1"
+    assert msg.advertisement is not None
+    assert msg.advertisement is msg.sender.advertisement

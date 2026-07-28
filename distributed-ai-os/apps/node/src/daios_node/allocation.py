@@ -179,8 +179,12 @@ def probe_llama_devices(
     output = f"{result.stdout}\n{result.stderr}"
     devices = parse_device_listing(output)
     if not devices:
-        logger.warning(
-            "Device probe returned no parseable devices (exit=%s). Output tail: %s",
+        # A CPU-only llama.cpp build lists no GPU-class devices at all, so this
+        # is the normal outcome on a CPU cluster, not a malfunction. Say so —
+        # "probe failed" sent people hunting for a broken binary.
+        logger.info(
+            "Device probe listed no GPU-class devices (exit=%s); llama.cpp will "
+            "use its own proportional split. Output tail: %s",
             result.returncode,
             output[-500:].strip(),
         )

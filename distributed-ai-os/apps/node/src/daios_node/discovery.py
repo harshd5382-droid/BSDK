@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
+import threading
+import time
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -29,13 +31,31 @@ except ImportError:
     NonUniqueNameException = Exception  # type: ignore[misc, assignment]
 
 
+# The LAN address is stamped into every gossip message and every membership
+# view — including one per peer per heartbeat round and one per chat request —
+# so the route lookup below runs far too often to do unconditionally. It only
+# changes when the machine changes network, so a short TTL is plenty.
+_LAN_IP_TTL = 30.0
+_lan_ip_lock = threading.Lock()
+_lan_ip_value: str | None = None
+_lan_ip_ts: float = 0.0
+
+
 def _get_lan_ip() -> str:
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.connect(("8.8.8.8", 80))
-            return sock.getsockname()[0]
-    except OSError:
-        return "127.0.0.1"
+    global _lan_ip_value, _lan_ip_ts
+    now = time.monotonic()
+    with _lan_ip_lock:
+        if _lan_ip_value is not None and now - _lan_ip_ts < _LAN_IP_TTL:
+            return _lan_ip_value
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.connect(("8.8.8.8", 80))
+                ip = sock.getsockname()[0]
+        except OSError:
+            ip = "127.0.0.1"
+        _lan_ip_value = ip
+        _lan_ip_ts = now
+        return ip
 
 
 def _decode_txt_value(value: bytes | str) -> str:
