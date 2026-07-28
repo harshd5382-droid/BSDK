@@ -14,9 +14,12 @@ import tempfile
 import threading
 import time
 from collections import defaultdict, deque
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
+
+import psutil
 
 from daios_protocol.config import NodeConfig
 from daios_protocol.health import (
@@ -39,6 +42,16 @@ logger = logging.getLogger(__name__)
 # Debounce for topology-driven llama-server restarts when no distribution
 # config is present (legacy configs get safe restarts too).
 _DEFAULT_RESTART_DEBOUNCE = 10.0
+
+# How long a `--list-devices` probe result stays usable. Spawning a full
+# llama-server just to enumerate devices costs seconds and opens a connection
+# to every (single-threaded) worker RPC server, so repeated restarts with an
+# unchanged topology reuse the previous answer instead of re-probing.
+_DEVICE_PROBE_TTL = 60.0
+
+# RAM headroom (GB) required on top of the model file before the coordinator is
+# allowed to lock the whole model resident with --mlock.
+_MLOCK_HEADROOM_GB = 2.0
 
 
 def _tcp_ready(host: str, port: int, timeout: float = 1.0) -> bool:
@@ -90,7 +103,14 @@ class ManagedProcess:
                 stderr=subprocess.STDOUT,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
-            time.sleep(0.5)
+            # Give the child a moment to fail fast (bad flags, missing model,
+            # port in use) without paying a flat 0.5s on the happy path — this
+            # runs on the node's startup path for every process we launch.
+            deadline = time.monotonic() + 0.5
+            while time.monotonic() < deadline:
+                if self.process.poll() is not None:
+                    break
+                time.sleep(0.02)
             if self.process.poll() is not None:
                 self.state = ProcessState.FAILED
                 self.last_error = self._read_output() or f"{self.name} exited immediately"
@@ -235,6 +255,8 @@ class InferenceManager:
         self._excluded_endpoints: dict[str, str] = {}
         self._fallback_reason: str | None = None
         self._effective_command: list[str] | None = None
+        self._probe_cache: tuple[tuple[str, ...], float, list] | None = None
+        self._starting_llama = False
 
     def _log_path(self, name: str) -> Path:
         return self._log_dir / f"{self.config.node_id}-{name}.log"
@@ -277,7 +299,15 @@ class InferenceManager:
         endpoints = self.config.rpc_endpoints(self._peer_hosts)
         return [ep for ep in endpoints if ep.rsplit(":", 1)[0] not in self._excluded_hosts]
 
-    def start(self) -> None:
+    def start(self, *, background_llama: bool = False) -> None:
+        """Start the backend processes.
+
+        ``background_llama`` starts the coordinator's llama-server on a worker
+        thread. Loading a heavy model is slow (RPC readiness wait + device
+        probe + GGUF load), and this runs from the FastAPI lifespan — blocking
+        it keeps ``/health`` unanswerable for the whole load, which looks to
+        the launcher and dashboard like a node that failed to start.
+        """
         if self.config.inference.backend == "mock":
             if self.config.runs_rpc_server:
                 self._mock_rpc = _MockRpcListener(
@@ -307,9 +337,26 @@ class InferenceManager:
                     "Deferring llama-server start up to %.0fs while discovery finds workers",
                     dist.wait_for_workers_seconds,
                 )
+            elif background_llama:
+                self._starting_llama = True
+                threading.Thread(
+                    target=self._start_llama_server_locked,
+                    name="daios-llama-start",
+                    daemon=True,
+                ).start()
             else:
                 self._start_llama_server()
         self._started_at = time.monotonic()
+
+    def _start_llama_server_locked(self) -> None:
+        """``_start_llama_server`` under the lifecycle lock (background start)."""
+        try:
+            with self._lifecycle_lock:
+                self._start_llama_server()
+        except Exception:  # pragma: no cover - defensive; thread must not die silently
+            logger.exception("Background llama-server start failed")
+        finally:
+            self._starting_llama = False
 
     def stop(self) -> None:
         with self._lifecycle_lock:
@@ -322,6 +369,8 @@ class InferenceManager:
                 self._mock_rpc = None
             self._started_at = None
             self._llama_start_deferred = False
+            self._starting_llama = False
+            self._probe_cache = None
             self._restart_state = "idle"
             self._restart_timestamps.clear()
             self._restart_backoff.clear()
@@ -350,7 +399,7 @@ class InferenceManager:
             rpc_server=rpc_state,
             model_path=self.config.inference.model_path,
             openai_base_url=openai_url,
-            llama_server_pending=self._llama_start_deferred,
+            llama_server_pending=self._llama_start_deferred or self._starting_llama,
         )
 
     def uptime_seconds(self) -> float:
@@ -518,17 +567,22 @@ class InferenceManager:
         deadline = time.monotonic() + timeout
         remaining = list(endpoints)
         reached: set[str] = set()
-        while True:  # always probe at least once, even with timeout=0
-            still_pending: list[str] = []
-            for ep in remaining:
-                if self._endpoint_ready(ep):
-                    reached.add(ep)
-                else:
-                    still_pending.append(ep)
-            remaining = still_pending
-            if not remaining or time.monotonic() >= deadline:
-                break
-            time.sleep(0.5)
+        if not remaining:
+            return [], {}
+        # Probe every endpoint concurrently. Serially, each unreachable worker
+        # costs a full connect timeout before the next one is even tried, so a
+        # single powered-off PC delayed the whole cluster's model load.
+        with ThreadPoolExecutor(max_workers=min(16, len(remaining))) as pool:
+            while True:  # always probe at least once, even with timeout=0
+                results = list(pool.map(self._endpoint_ready, remaining))
+                still_pending = [
+                    ep for ep, ok in zip(remaining, results) if not ok
+                ]
+                reached.update(ep for ep, ok in zip(remaining, results) if ok)
+                remaining = still_pending
+                if not remaining or time.monotonic() >= deadline:
+                    break
+                time.sleep(0.5)
         ready = [ep for ep in endpoints if ep in reached]
         excluded = {
             ep: f"RPC port not reachable within {timeout:.0f}s"
@@ -545,6 +599,28 @@ class InferenceManager:
         timeout = 15.0
         return probe_llama_devices(binary, rpc_endpoints, timeout=timeout)
 
+    def _probe_devices_cached(self, binary: str, rpc_endpoints: list[str]):
+        """``_probe_devices`` with a short TTL cache keyed by the topology.
+
+        Auto-restarts (crash recovery, operator reloads) re-run this with an
+        unchanged endpoint list; each probe spawns a whole llama-server that
+        dials every worker's single-threaded RPC server, so repeating it adds
+        seconds to the reload for no new information.
+        """
+        key = (binary, *rpc_endpoints)
+        cached = self._probe_cache
+        if cached is not None:
+            cached_key, cached_at, devices = cached
+            if cached_key == key and time.monotonic() - cached_at < _DEVICE_PROBE_TTL:
+                logger.debug("Reusing cached device probe for %s", rpc_endpoints)
+                return devices
+        probed = self._probe_devices(binary, rpc_endpoints)
+        if probed is None:
+            self._probe_cache = None
+        else:
+            self._probe_cache = (key, time.monotonic(), probed)
+        return probed
+
     def _apply_distribution(
         self,
         dist,
@@ -559,7 +635,7 @@ class InferenceManager:
         ``--tensor-split``), which is the fast path that always worked.
         The distribution policy only applies when the probe succeeds quickly.
         """
-        probed = self._probe_devices(binary, rpc_endpoints)
+        probed = self._probe_devices_cached(binary, rpc_endpoints)
         if probed is None:
             self._fallback_reason = (
                 "device probe failed; using llama.cpp default proportional split"
@@ -682,10 +758,50 @@ class InferenceManager:
         if inf.threads:
             cmd.extend(["-t", str(inf.threads)])
         cmd.extend(inf.extra_args)
+        if self.rpc_server is not None:
+            self.rpc_server._close_log()
         self.rpc_server = ManagedProcess(
             name="rpc-server", command=cmd, log_path=self._log_path("rpc-server")
         )
         self.rpc_server.start()
+
+    def _should_mlock(self, rpc_endpoints: list[str]) -> bool:
+        """Whether to lock the model resident with ``--mlock``.
+
+        ``--mlock`` keeps every mapped page of the GGUF in physical RAM. That
+        is a win for a solo coordinator with room to spare (no page-cache
+        eviction mid-generation), but it is actively harmful in the two cases
+        this project exists for:
+
+        - **Pooling workers.** The tensors live on the RPC devices; the
+          coordinator only streams the file through on load. Locking the whole
+          model resident re-imposes the single-machine memory ceiling that
+          ``--rpc`` was added to escape.
+        - **A model larger than local RAM.** mlock cannot succeed, so the load
+          degrades into swap thrash and never finishes — the "loading model
+          forever" failure.
+
+        Both fall back to plain mmap, which streams from disk and starts fast.
+        """
+        if rpc_endpoints:
+            return False
+        model_path = self.config.inference.model_path
+        if not model_path:
+            return False
+        try:
+            model_gb = Path(model_path).stat().st_size / (1024**3)
+            available_gb = psutil.virtual_memory().available / (1024**3)
+        except (OSError, ValueError):
+            return False
+        if model_gb + _MLOCK_HEADROOM_GB > available_gb:
+            logger.info(
+                "Skipping --mlock: model is %.1f GB but only %.1f GB RAM is available "
+                "(mmap streaming instead)",
+                model_gb,
+                available_gb,
+            )
+            return False
+        return True
 
     def _start_llama_server(self) -> None:
         inf = self.config.inference
@@ -727,7 +843,9 @@ class InferenceManager:
             cmd.extend(["-t", str(inf.threads), "-tb", str(inf.threads)])
 
         # Single slot avoids parallel requests competing for CPU/RPC bandwidth.
-        cmd.extend(["-np", "1", "--cont-batching", "--mlock"])
+        cmd.extend(["-np", "1", "--cont-batching"])
+        if self._should_mlock(rpc_endpoints):
+            cmd.append("--mlock")
 
         if rpc_endpoints:
             cmd.extend(["--rpc", ",".join(rpc_endpoints)])
@@ -741,6 +859,10 @@ class InferenceManager:
         self._effective_command = redact_command(cmd)
         logger.info("Effective llama-server command: %s", " ".join(self._effective_command))
 
+        # Replacing the object without closing its log file leaks a descriptor
+        # on every auto-restart / topology reload.
+        if self.llama_server is not None:
+            self.llama_server._close_log()
         self.llama_server = ManagedProcess(
             name="llama-server", command=cmd, log_path=self._log_path("llama-server")
         )

@@ -779,18 +779,29 @@ class LauncherApp:
         deadline = asyncio.get_event_loop().time() + _INFERENCE_READY_WAIT_S
         last_detail: str | None = None
         while True:
-            try:
-                resp = await self._http.get(
-                    f"http://127.0.0.1:{api_port}/health",
-                    timeout=5.0,
-                )
-                health = resp.json()
-            except httpx.HTTPError as exc:
-                last_detail = f"Node health check failed: {exc}"
+            # Node health and the llama-server probe are independent, so issue
+            # them together: each poll then costs one round trip instead of
+            # two, halving the delay between "model finished loading" and the
+            # prompt actually going out.
+            health_result, probe_result = await asyncio.gather(
+                self._http.get(f"http://127.0.0.1:{api_port}/health", timeout=5.0),
+                self._probe_llama_ready(api_port),
+                return_exceptions=True,
+            )
+
+            if isinstance(health_result, BaseException):
+                last_detail = f"Node health check failed: {health_result}"
                 if asyncio.get_event_loop().time() >= deadline:
-                    raise HTTPException(status_code=503, detail=last_detail) from exc
+                    raise HTTPException(
+                        status_code=503, detail=last_detail
+                    ) from health_result
                 await asyncio.sleep(_INFERENCE_READY_POLL_S)
                 continue
+
+            try:
+                health = health_result.json()
+            except ValueError:
+                health = {}
 
             inf = health.get("inference", {})
             state = inf.get("llama_server")
@@ -805,9 +816,13 @@ class LauncherApp:
                     ),
                 )
 
-            # Probe llama-server itself: the process can be "running" while the
-            # model is still loading. /v1/models returns 200 only when ready.
-            ready, probe_detail = await self._probe_llama_ready(api_port)
+            # The process can be "running" while the model is still loading;
+            # /v1/models returns 200 only once it can actually serve.
+            if isinstance(probe_result, BaseException):
+                ready, probe_detail = False, f"llama-server unreachable: {probe_result}"
+            else:
+                ready, probe_detail = probe_result
+
             if ready and state == "running" and not pending:
                 return
 

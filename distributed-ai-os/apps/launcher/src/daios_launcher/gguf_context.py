@@ -122,6 +122,52 @@ def read_gguf_metadata(path: Path) -> dict[str, object]:
             return metadata
 
 
+def estimate_kv_bytes_per_token(model_path: str | Path) -> int | None:
+    """Bytes of KV cache one token costs for this model, or None if unknown.
+
+    The KV cache is a hard up-front allocation sized by the context window, and
+    for a long-context model it dwarfs the weights: Qwen2.5-14B needs ~192 KiB
+    per token, so its declared 128k context asks for ~24 GB before a single
+    token is generated. Callers use this to pick a context the machine can
+    actually allocate instead of trusting the model's advertised maximum.
+
+    Assumes f16 K and V entries (llama.cpp's default cache type).
+    """
+    path = Path(model_path)
+    if not path.is_file():
+        return None
+    try:
+        metadata = read_gguf_metadata(path)
+    except (OSError, ValueError, struct.error, UnicodeDecodeError):
+        return None
+
+    arch = metadata.get("general.architecture")
+    if not isinstance(arch, str):
+        return None
+
+    def _int(key: str) -> int | None:
+        value = metadata.get(f"{arch}.{key}")
+        return value if isinstance(value, int) and value > 0 else None
+
+    layers = _int("block_count")
+    kv_heads = _int("attention.head_count_kv") or _int("attention.head_count")
+    if not layers or not kv_heads:
+        return None
+
+    head_dim = _int("attention.key_length")
+    if head_dim is None:
+        embedding = _int("embedding_length")
+        heads = _int("attention.head_count")
+        if not embedding or not heads:
+            return None
+        head_dim = embedding // heads
+    if head_dim <= 0:
+        return None
+
+    # K and V, f16 (2 bytes per element).
+    return 2 * layers * kv_heads * head_dim * 2
+
+
 def infer_context_size(model_path: str | Path) -> int | None:
     """Return the model's trained context length from GGUF metadata, if present."""
     path = Path(model_path)

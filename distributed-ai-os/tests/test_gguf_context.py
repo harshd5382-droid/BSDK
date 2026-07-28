@@ -100,3 +100,34 @@ def test_build_node_config_mock_backend_uses_auto_context(tmp_path: Path):
     )
     config = build_node_config(req, project_root=tmp_path)
     assert config.inference.context_size == 0
+
+
+def test_estimate_kv_bytes_per_token_from_metadata(tmp_path, monkeypatch):
+    from daios_launcher import gguf_context
+
+    model = tmp_path / "m.gguf"
+    model.write_bytes(b"x")
+    monkeypatch.setattr(
+        gguf_context,
+        "read_gguf_metadata",
+        lambda _p: {
+            "general.architecture": "qwen2",
+            "qwen2.block_count": 48,
+            "qwen2.attention.head_count": 40,
+            "qwen2.attention.head_count_kv": 8,
+            "qwen2.embedding_length": 5120,
+        },
+    )
+    # 2 (K+V) * 48 layers * 8 kv heads * 128 head_dim * 2 bytes = 196608
+    assert gguf_context.estimate_kv_bytes_per_token(model) == 196608
+
+
+def test_estimate_kv_bytes_per_token_returns_none_without_metadata(tmp_path, monkeypatch):
+    from daios_launcher import gguf_context
+
+    model = tmp_path / "m.gguf"
+    model.write_bytes(b"x")
+    monkeypatch.setattr(
+        gguf_context, "read_gguf_metadata", lambda _p: {"general.architecture": "qwen2"}
+    )
+    assert gguf_context.estimate_kv_bytes_per_token(model) is None

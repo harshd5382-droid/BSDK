@@ -9,9 +9,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from daios_launcher.gguf_context import infer_context_size
-
+import psutil
 import yaml
+
+from daios_launcher.gguf_context import estimate_kv_bytes_per_token, infer_context_size
+
 from pydantic import BaseModel, Field
 
 from daios_protocol.config import (
@@ -33,6 +35,11 @@ INFERENCE_CONTEXT_CAP = 131072
 # like "loading model" forever in chat. Matches coordinator-distributed.yaml.
 DISTRIBUTED_CONTEXT_CAP = 4096
 DEFAULT_CHAT_MAX_TOKENS = 512
+# RAM (GB) kept aside for weights, compute buffers, and the OS before the rest
+# of what is free is offered to the KV cache.
+KV_CACHE_RESERVE_GB = 2.0
+# Never derive a context smaller than this, however tight memory looks.
+MIN_CONTEXT_SIZE = 2048
 
 
 class StartRequest(BaseModel):
@@ -135,6 +142,30 @@ def _default_threads() -> int:
     return max(1, (os.cpu_count() or 2) - 1)
 
 
+def _affordable_context_size(model_path: str) -> int | None:
+    """Largest context this machine can allocate a KV cache for, or None.
+
+    The KV cache is allocated up front from RAM. A long-context model happily
+    advertises 128k, which for a 14B model is ~24 GB of cache — on a typical
+    PC that allocation either fails or swaps, and the symptom is llama-server
+    sitting on "loading model" forever. So the solo cap is the machine's, not
+    the model's.
+    """
+    kv_bytes = estimate_kv_bytes_per_token(model_path)
+    if not kv_bytes:
+        return None
+    try:
+        available_gb = psutil.virtual_memory().available / (1024**3)
+    except (OSError, ValueError):  # pragma: no cover - psutil is always present
+        return None
+    # Weights, the graph, and the OS need room too; only the surplus is the
+    # cache's to spend.
+    budget_gb = max(0.5, available_gb - KV_CACHE_RESERVE_GB)
+    tokens = int(budget_gb * (1024**3) // kv_bytes)
+    # Round down to a 1024 boundary; never fall below a usable window.
+    return max(MIN_CONTEXT_SIZE, tokens - (tokens % 1024))
+
+
 def _resolve_context_size(
     model_path: str | None, backend: str, *, distributed: bool = False
 ) -> int:
@@ -143,6 +174,12 @@ def _resolve_context_size(
         return 0
     native = infer_context_size(model_path)
     cap = DISTRIBUTED_CONTEXT_CAP if distributed else INFERENCE_CONTEXT_CAP
+    if not distributed:
+        # Distributed runs already sit at a small fixed cap and spread the
+        # cache across RPC devices, so only the solo path needs this.
+        affordable = _affordable_context_size(model_path)
+        if affordable is not None:
+            cap = min(cap, affordable)
     if native is None:
         return cap
     return min(native, cap)

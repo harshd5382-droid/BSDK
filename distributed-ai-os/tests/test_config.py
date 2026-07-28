@@ -105,3 +105,10 @@ def test_scheduler_and_inference_restart_defaults():
     assert config.inference.max_restarts == 5
     assert config.scheduler.enabled is False
     assert config.scheduler.max_concurrent == 1
+
+
+def test_rpc_endpoints_honours_explicit_peer_ports():
+    """Discovered workers advertise their own rpc_port; assuming ours pools nothing."""
+    config = NodeConfig.model_validate({"node_id": "c", "role": "coordinator"})
+    endpoints = config.rpc_endpoints(["10.0.0.2:60000", "10.0.0.3"])
+    assert endpoints == ["10.0.0.2:60000", "10.0.0.3:50052"]

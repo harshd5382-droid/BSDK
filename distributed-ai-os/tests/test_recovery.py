@@ -208,3 +208,45 @@ def test_membership_partition_transitions_and_dead_exclusion():
     endpoints = registry._select_workers([alive, suspect, dead])
     assert "10.0.0.2:50052" in endpoints
     assert "10.0.0.4:50052" not in endpoints
+
+
+def _worker_member(node_id: str, host: str) -> MemberInfo:
+    return MemberInfo(
+        node_id=node_id,
+        host=host,
+        api_port=8001,
+        rpc_port=50052,
+        role="worker",
+        status=MemberStatus.ALIVE,
+        last_seen=datetime.now(timezone.utc),
+    )
+
+
+def test_dead_workers_are_evicted_from_the_rpc_pool():
+    """Skipping the update on an empty worker list left llama-server pointed at
+    RPC endpoints that no longer answer, so every request failed forever."""
+    app = NodeApp(_config())
+    app.membership._members = {"w1": _worker_member("w1", "10.0.0.2")}
+    app._sync_inference_peers()
+    assert app.inference.rpc_endpoints_effective() == ["10.0.0.2:50052"]
+
+    app.membership._members["w1"].status = MemberStatus.DEAD
+    app._sync_inference_peers()
+    assert app.inference.rpc_endpoints_effective() == []
+
+
+def test_lease_creation_does_not_mutate_the_rpc_topology():
+    """Placement scores shift with load; letting them drive set_peer_hosts
+    marked the topology stale and reloaded the model mid-conversation."""
+    app = NodeApp(_config())
+    app.membership._members = {
+        "w1": _worker_member("w1", "10.0.0.2"),
+        "w2": _worker_member("w2", "10.0.0.3"),
+    }
+    app._sync_inference_peers()
+    before = app.inference.rpc_endpoints_effective()
+
+    view = app.membership.get_membership_view()
+    app.coordinator_registry.create_lease([view.members[0]])
+
+    assert app.inference.rpc_endpoints_effective() == before

@@ -52,6 +52,10 @@ class CoordinatorRegistry:
                 continue
             if m.node_id == self.config.node_id:
                 continue
+            # Only nodes that actually run a ggml-rpc-server can hold tensors.
+            # A coordinator-role peer has no RPC port to place work on.
+            if m.role not in ("worker", "hybrid"):
+                continue
             if not m.advertisement:
                 candidates.append((0.5, m))
                 continue

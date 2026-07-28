@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from unittest.mock import patch
 
 import pytest
@@ -389,3 +391,148 @@ def test_wait_for_rpc_ready_partitions_endpoints():
         )
     assert ready == ["10.0.0.2:50052"]
     assert list(excluded) == ["10.0.0.3:50052"]
+
+
+# ---------------------------------------------------------------------------
+# Model-load performance: --mlock, probe caching
+# ---------------------------------------------------------------------------
+
+
+def test_mlock_is_omitted_when_pooling_rpc_workers():
+    """--mlock would lock the whole GGUF resident on the coordinator, undoing
+    the memory pooling that --rpc exists to provide."""
+    manager = InferenceManager(_coordinator_config(distribution=_FAST_DIST))
+    manager._probe_devices = _probed_two_devices  # type: ignore[method-assign]
+    with (
+        patch("daios_node.inference.subprocess.Popen"),
+        patch("daios_node.inference._tcp_ready", return_value=True),
+    ):
+        manager._start_llama_server()
+
+    cmd = manager.llama_server.command
+    assert "--rpc" in cmd
+    assert "--mlock" not in cmd
+
+
+def test_mlock_is_used_for_a_solo_coordinator_with_room(tmp_path):
+    model = tmp_path / "small.gguf"
+    model.write_bytes(b"\0" * 1024)
+    config = _coordinator_config(distribution=None, peers=[])
+    config.inference.model_path = str(model)
+    manager = InferenceManager(config)
+    with patch("daios_node.inference.subprocess.Popen"):
+        manager._start_llama_server()
+
+    cmd = manager.llama_server.command
+    assert "--rpc" not in cmd
+    assert "--mlock" in cmd
+
+
+def test_mlock_is_skipped_when_the_model_exceeds_available_ram(tmp_path):
+    model = tmp_path / "huge.gguf"
+    model.write_bytes(b"\0" * 1024)
+    config = _coordinator_config(distribution=None, peers=[])
+    config.inference.model_path = str(model)
+    manager = InferenceManager(config)
+
+    class _TinyMem:
+        available = 512 * 1024 * 1024  # 0.5 GB — less than the 2 GB headroom
+
+    with (
+        patch("daios_node.inference.subprocess.Popen"),
+        patch("daios_node.inference.psutil.virtual_memory", return_value=_TinyMem()),
+    ):
+        manager._start_llama_server()
+
+    assert "--mlock" not in manager.llama_server.command
+
+
+def test_device_probe_is_reused_across_restarts_with_the_same_topology():
+    manager = InferenceManager(_coordinator_config(distribution=_FAST_DIST))
+    calls: list[int] = []
+
+    def _counting_probe(*args, **kwargs):
+        calls.append(1)
+        return _probed_two_devices()
+
+    manager._probe_devices = _counting_probe  # type: ignore[method-assign]
+    with (
+        patch("daios_node.inference.subprocess.Popen"),
+        patch("daios_node.inference._tcp_ready", return_value=True),
+    ):
+        manager._start_llama_server()
+        first_split = manager.llama_server.command
+        manager._start_llama_server()
+
+    assert len(calls) == 1, "unchanged topology must not re-spawn a device probe"
+    assert manager.llama_server.command == first_split
+
+
+def test_device_probe_is_repeated_when_the_topology_changes():
+    manager = InferenceManager(_coordinator_config(distribution=_FAST_DIST))
+    calls: list[list[str]] = []
+
+    def _recording_probe(_binary, endpoints, *args, **kwargs):
+        calls.append(list(endpoints))
+        return _probed_two_devices()
+
+    manager._probe_devices = _recording_probe  # type: ignore[method-assign]
+    with (
+        patch("daios_node.inference.subprocess.Popen"),
+        patch("daios_node.inference._tcp_ready", return_value=True),
+    ):
+        manager._start_llama_server()
+        manager.set_peer_hosts(["10.0.0.2", "10.0.0.9"])
+        manager._start_llama_server()
+
+    assert len(calls) == 2
+    assert calls[0] != calls[1]
+
+
+def test_wait_for_rpc_ready_probes_endpoints_concurrently():
+    """One unreachable worker must not serialize the wait for the others."""
+    manager = InferenceManager(_coordinator_config(distribution=_FAST_DIST))
+    endpoints = [f"10.0.0.{i}:50052" for i in range(2, 10)]
+
+    def _slow_unreachable(host, port, timeout=1.0):
+        time.sleep(0.3)
+        return host == "10.0.0.2"
+
+    started = time.monotonic()
+    with patch("daios_node.inference._tcp_ready", side_effect=_slow_unreachable):
+        ready, excluded = manager._wait_for_rpc_ready(endpoints, timeout=0.0)
+    elapsed = time.monotonic() - started
+
+    assert ready == ["10.0.0.2:50052"]
+    assert len(excluded) == 7
+    # Serial probing would cost 8 * 0.3s = 2.4s.
+    assert elapsed < 1.5
+
+
+def test_background_start_does_not_block_the_caller():
+    manager = InferenceManager(_coordinator_config(distribution=_FAST_DIST))
+    manager._probe_devices = _probed_two_devices  # type: ignore[method-assign]
+
+    release = threading.Event()
+
+    def _blocking_popen(*_a, **_k):
+        release.wait(timeout=5)
+        return _FakeRunningProc()
+
+    with (
+        patch("daios_node.inference.subprocess.Popen", side_effect=_blocking_popen),
+        patch("daios_node.inference._tcp_ready", return_value=True),
+    ):
+        started = time.monotonic()
+        manager.start(background_llama=True)
+        elapsed = time.monotonic() - started
+        # The caller (FastAPI lifespan) returns immediately; the load continues
+        # on the worker thread and is reported as pending.
+        assert elapsed < 1.0
+        assert manager.status().llama_server_pending is True
+        release.set()
+        for _ in range(50):
+            if not manager._starting_llama:
+                break
+            time.sleep(0.1)
+        assert manager._starting_llama is False

@@ -114,11 +114,15 @@ def _gather_battery() -> float | None:
 
 
 def _gather_user_idle_seconds() -> float | None:
-    try:
-        idle = psutil.cpu_times().idle
-        return float(idle) if idle else None
-    except (AttributeError, OSError):
-        return None
+    """Seconds the interactive user has been idle.
+
+    There is no portable way to read this, and the previous implementation
+    returned ``psutil.cpu_times().idle`` — cumulative CPU idle time since boot
+    across all cores, which is a different quantity entirely (it grows without
+    bound on an idle machine and is often larger than the uptime). Reporting
+    None is honest; a wrong number here would skew placement decisions.
+    """
+    return None
 
 
 def _caps_dict(caps: ResourceCapsConfig) -> dict[str, float]:
@@ -200,7 +204,11 @@ def gather_advertisement(
     mem = psutil.virtual_memory()
     disk = shutil.disk_usage(system_disk_root())
     cpu_count = psutil.cpu_count(logical=True) or 1
-    cpu_percent = psutil.cpu_percent(interval=None)
+    # Must go through the cache: psutil.cpu_percent(interval=None) measures
+    # against the *last call in this process*, so calling it raw here resets
+    # the window for gather_resources() and both readings become noise. That
+    # noise feeds placement scores, which decide where tensors land.
+    cpu_percent = _get_cpu_percent()
     available_cores = max(1, int(cpu_count * (1 - cpu_percent / 100)))
 
     return ResourceAdvertisement(

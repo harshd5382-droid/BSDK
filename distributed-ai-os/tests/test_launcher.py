@@ -301,3 +301,64 @@ def test_system_includes_local_ips(launcher_client):
     data = resp.json()
     assert "local_ips" in data
     assert get_lan_ip() in data["local_ips"]
+
+
+def _fake_mem(available_gb: float):
+    class _Mem:
+        available = int(available_gb * (1024**3))
+
+    return lambda: _Mem()
+
+
+def test_solo_context_is_capped_by_what_the_kv_cache_can_fit(tmp_path, monkeypatch):
+    """A 128k context on a 14B model is ~24 GB of KV cache; trusting the
+    model's advertised maximum is what hangs llama-server on 'loading model'."""
+    from daios_launcher import config_gen
+
+    model = tmp_path / "m.gguf"
+    model.write_bytes(b"x")
+    monkeypatch.setattr(config_gen, "infer_context_size", lambda _p: 131072)
+    monkeypatch.setattr(config_gen, "estimate_kv_bytes_per_token", lambda _p: 196608)
+    monkeypatch.setattr(config_gen.psutil, "virtual_memory", _fake_mem(4.0))
+
+    size = config_gen._resolve_context_size(str(model), "llama.cpp", distributed=False)
+    assert size == 10240  # (4 - 2) GB / 192 KiB per token, floored to 1024
+
+
+def test_solo_context_keeps_the_full_window_on_a_large_machine(tmp_path, monkeypatch):
+    from daios_launcher import config_gen
+
+    model = tmp_path / "m.gguf"
+    model.write_bytes(b"x")
+    monkeypatch.setattr(config_gen, "infer_context_size", lambda _p: 32768)
+    monkeypatch.setattr(config_gen, "estimate_kv_bytes_per_token", lambda _p: 196608)
+    monkeypatch.setattr(config_gen.psutil, "virtual_memory", _fake_mem(128.0))
+
+    size = config_gen._resolve_context_size(str(model), "llama.cpp", distributed=False)
+    assert size == 32768  # memory is not the binding constraint here
+
+
+def test_solo_context_never_drops_below_a_usable_window(tmp_path, monkeypatch):
+    from daios_launcher import config_gen
+
+    model = tmp_path / "m.gguf"
+    model.write_bytes(b"x")
+    monkeypatch.setattr(config_gen, "infer_context_size", lambda _p: 131072)
+    monkeypatch.setattr(config_gen, "estimate_kv_bytes_per_token", lambda _p: 196608)
+    monkeypatch.setattr(config_gen.psutil, "virtual_memory", _fake_mem(0.2))
+
+    size = config_gen._resolve_context_size(str(model), "llama.cpp", distributed=False)
+    assert size == config_gen.MIN_CONTEXT_SIZE
+
+
+def test_distributed_context_cap_is_unaffected_by_local_ram(tmp_path, monkeypatch):
+    from daios_launcher import config_gen
+
+    model = tmp_path / "m.gguf"
+    model.write_bytes(b"x")
+    monkeypatch.setattr(config_gen, "infer_context_size", lambda _p: 131072)
+    monkeypatch.setattr(config_gen, "estimate_kv_bytes_per_token", lambda _p: 196608)
+    monkeypatch.setattr(config_gen.psutil, "virtual_memory", _fake_mem(0.2))
+
+    size = config_gen._resolve_context_size(str(model), "llama.cpp", distributed=True)
+    assert size == config_gen.DISTRIBUTED_CONTEXT_CAP

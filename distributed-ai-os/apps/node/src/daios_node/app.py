@@ -33,7 +33,7 @@ from daios_node.inference_tracker import InferenceTracker
 from daios_node.membership import MembershipService
 from daios_node.mock_backend import router as mock_router
 from daios_node.model_usage import gather_model_usage
-from daios_node.peers import check_all_peers, count_inbound_rpc_clients
+from daios_node.peers import check_all_peers, close_shared_client, count_inbound_rpc_clients
 from daios_node.resilience import forward_with_retry
 from daios_node.resources import gather_capabilities, gather_resources
 from daios_node.security import ApiTokenMiddleware, ensure_dev_certs
@@ -104,9 +104,9 @@ class NodeApp:
     def _sync_inference_peers(self) -> None:
         if not self.config.discovery_enabled:
             return
-        hosts = self.membership.get_alive_worker_hosts()
-        if hosts:
-            self.inference.set_peer_hosts(hosts)
+        # Endpoints, not bare hosts: a worker is free to run its RPC server on
+        # a non-default port, and only the member record knows which.
+        self.inference.set_peer_hosts(self.membership.get_alive_worker_endpoints())
         view = self.membership.get_membership_view()
         caps: dict[str, NodeCapabilities] = {}
         rtt_by_host: dict[str, float] = {}
@@ -147,7 +147,11 @@ class NodeApp:
     @asynccontextmanager
     async def lifespan(self, app: FastAPI) -> AsyncIterator[None]:
         ensure_dev_certs(self.config)
-        self.inference.start()
+        # Load the model off the lifespan path: waiting for worker RPC ports,
+        # probing devices, and reading a multi-GB GGUF can take a minute, and
+        # until lifespan yields this node answers nothing — so the launcher and
+        # dashboard see an unreachable node instead of one that is loading.
+        self.inference.start(background_llama=True)
         self._http_client = httpx.AsyncClient(timeout=120.0)
 
         if self.config.discovery_enabled:
@@ -176,6 +180,7 @@ class NodeApp:
             except asyncio.CancelledError:
                 pass
         await self.discovery.stop()
+        await close_shared_client()
         if self._http_client:
             await self._http_client.aclose()
         self.inference.stop()
@@ -472,9 +477,13 @@ class NodeApp:
                 eligible = [m for m in view.members if m.host not in self._paused_hosts]
                 lease = self.coordinator_registry.create_lease(eligible)
                 request_id = lease.request_id
-                if lease.worker_endpoints:
-                    hosts = [ep.rsplit(":", 1)[0] for ep in lease.worker_endpoints]
-                    self.inference.set_peer_hosts(hosts)
+                # The lease records which workers were *scored* for this
+                # request; it must not drive the RPC topology. Placement scores
+                # move with load, so pushing them into set_peer_hosts here made
+                # the endpoint set differ between requests, marking the topology
+                # stale and reloading the model mid-conversation. The RPC pool
+                # is owned by _sync_inference_peers (membership), which changes
+                # only when a worker actually joins or dies.
 
             url = f"{base}/v1/{path}"
             body = await request.body()

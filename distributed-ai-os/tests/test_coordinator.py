@@ -76,3 +76,20 @@ def test_complete_lease_removes():
     registry.complete_lease("r1")
     assert registry.get_lease("r1") is None
     assert len(registry.active_leases()) == 0
+
+
+def test_lease_never_places_work_on_a_non_rpc_peer():
+    """A coordinator-role peer runs no ggml-rpc-server, so it cannot hold tensors."""
+    config = NodeConfig.model_validate({"node_id": "coord-1", "role": "coordinator"})
+    registry = CoordinatorRegistry(config)
+    other_coordinator = MemberInfo(
+        node_id="coord-2",
+        host="10.0.0.9",
+        api_port=8000,
+        rpc_port=50052,
+        role="coordinator",
+        status=MemberStatus.ALIVE,
+        last_seen=datetime.now(timezone.utc),
+    )
+    lease = registry.create_lease([other_coordinator, _worker("w1", "10.0.0.2")])
+    assert lease.worker_endpoints == ["10.0.0.2:50052"]
