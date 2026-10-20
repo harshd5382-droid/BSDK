@@ -37,6 +37,7 @@ Generation 2) and will become `0.1.0` when it is tagged.
 - Per-request leases no longer trigger mid-conversation model reloads.
 - CI no longer fails while installing the root dev package. Setuptools' flat-layout auto-discovery is now
   disabled for it.
+- The Ruff rule set is pinned explicitly, so newer Ruff releases with broader defaults no longer break CI.
 
 ### Removed
 - The prebuilt `daios-worker.exe` and the TypeScript build cache are no longer tracked in git. Release
