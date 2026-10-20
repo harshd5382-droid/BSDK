@@ -69,7 +69,12 @@ class NodeProcess:
                 import shutil
 
                 daios_node = shutil.which("daios-node", path=str(venv_bin)) or daios_node
-            node_cmd = [daios_node, "-c", str(self.config_path)]
+            if Path(daios_node).is_file():
+                node_cmd = [daios_node, "-c", str(self.config_path)]
+            else:
+                # No project .venv (e.g. CI, or a system/conda install): run the node
+                # with the launcher's own interpreter, which has daios_node installed.
+                node_cmd = [sys.executable, "-m", "daios_node", "-c", str(self.config_path)]
 
         env = {
             **spawn_env(venv_bin),
