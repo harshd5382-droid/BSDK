@@ -7,6 +7,8 @@ name = "daios-launcher"
 version = "0.1.0"
 description = "DAIOS launcher service — one-click node control and dashboard API"
 requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Harsh Desai" }]
 dependencies = [
     "daios-protocol",
     "fastapi>=0.115",
@@ -16,6 +18,11 @@ dependencies = [
     "pyyaml>=6.0",
     "huggingface_hub>=0.26",
 ]
+
+[project.urls]
+Homepage = "https://github.com/harshd5382-droid/BSDK"
+Repository = "https://github.com/harshd5382-droid/BSDK"
+Issues = "https://github.com/harshd5382-droid/BSDK/issues"
 
 [tool.uv.sources]
 daios-protocol = { path = "../../packages/protocol" }

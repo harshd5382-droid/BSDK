@@ -345,4 +345,4 @@ The cluster token (`X-DAIOS-Token` header) is a **LAN shared secret**. Anyone on
 
 ## License
 
-MIT
+MIT. See [LICENSE](../LICENSE). Contributions are welcome; see [CONTRIBUTING.md](../CONTRIBUTING.md).

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/harshd5382-droid/BSDK/security/advisories/new
+    about: Please report security issues privately, not as public issues.
+  - name: Troubleshooting guide
+    url: https://github.com/harshd5382-droid/BSDK/blob/main/distributed-ai-os/docs/troubleshooting-guide.md
+    about: Common failures (ports, firewall, discovery, RPC readiness) and how to fix them.

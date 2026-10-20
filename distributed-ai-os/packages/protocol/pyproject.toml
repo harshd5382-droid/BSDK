@@ -7,11 +7,18 @@ name = "daios-protocol"
 version = "0.1.0"
 description = "Shared configuration and protocol types for Distributed AI OS"
 requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Harsh Desai" }]
 dependencies = [
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
     "pyyaml>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/harshd5382-droid/BSDK"
+Repository = "https://github.com/harshd5382-droid/BSDK"
+Issues = "https://github.com/harshd5382-droid/BSDK/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/daios_protocol"]

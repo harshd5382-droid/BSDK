@@ -1,0 +1,74 @@
+name: Bug report
+description: Something isn't working as documented
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! **Security issues must not be filed here.** See SECURITY.md.
+        Please redact your cluster token and any API tokens from configs and logs.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start worker with `daios-node -c ...`
+        2. Start coordinator with ...
+        3. Send request ...
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      multiple: true
+      options:
+        - daios-node (inference / proxy)
+        - Discovery / membership (Gen 2)
+        - daios-launcher
+        - Dashboard
+        - Windows worker installer (daios-worker.exe)
+        - Scripts / build
+        - Docs
+    validations:
+      required: true
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Inference backend
+      options:
+        - llama.cpp (real)
+        - mock
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: For each machine involved, give its OS, CPU/GPU, RAM and role. Also include the BSDK commit or release, the Python version, the llama.cpp build, the model and quantization, and the network (Ethernet or Wi-Fi).
+      placeholder: |
+        Coordinator: Windows 11, Ryzen 7 5800X, RTX 3060 12GB, 32GB RAM
+        Worker: Ubuntu 24.04, i5-8400, CPU-only, 16GB RAM
+        BSDK: main @ 5e0e81a, Python 3.11.9, llama.cpp b4500 (-DGGML_RPC=ON)
+        Model: qwen2.5-7b-instruct-q4_k_m.gguf, gigabit Ethernet
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Node config (YAML)
+      description: Redact tokens.
+      render: yaml
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant output from `daios-node`, plus the `llama-server` / `ggml-rpc-server` logs from `DAIOS_LOG_DIR`.
+      render: shell

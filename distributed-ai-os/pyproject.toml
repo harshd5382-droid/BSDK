@@ -4,6 +4,13 @@ version = "0.1.0"
 description = "Generation 1 prototype — Peer-to-Peer Distributed AI Operating System"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Harsh Desai" }]
+
+[project.urls]
+Homepage = "https://github.com/harshd5382-droid/BSDK"
+Repository = "https://github.com/harshd5382-droid/BSDK"
+Issues = "https://github.com/harshd5382-droid/BSDK/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -12,6 +19,11 @@ dev = [
     "httpx>=0.27",
     "ruff>=0.8",
 ]
+
+# This root project only carries dev extras and tool config; the real packages live under
+# packages/ and apps/. Without this, setuptools' flat-layout discovery refuses to build.
+[tool.setuptools]
+packages = []
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

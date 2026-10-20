@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: npm
+    directory: /distributed-ai-os/apps/dashboard
+    schedule:
+      interval: monthly
+    groups:
+      dashboard:
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directories:
+      - /distributed-ai-os/packages/protocol
+      - /distributed-ai-os/apps/node
+      - /distributed-ai-os/apps/launcher
+    schedule:
+      interval: monthly
+    groups:
+      python:
+        patterns: ["*"]
