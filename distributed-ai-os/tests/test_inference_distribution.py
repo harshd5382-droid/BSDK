@@ -414,37 +414,54 @@ def test_mlock_is_omitted_when_pooling_rpc_workers():
     assert "--mlock" not in cmd
 
 
-def test_mlock_is_used_for_a_solo_coordinator_with_room(tmp_path):
-    model = tmp_path / "small.gguf"
+class _FakeMem:
+    """Stands in for psutil.virtual_memory() so --mlock decisions don't depend
+    on how much RAM the test host happens to have free."""
+
+    def __init__(self, available: int):
+        self.available = available
+
+
+def _solo_mlock_command(tmp_path, available_bytes: int) -> list[str]:
+    """Launch a solo coordinator over a 1 KiB fake GGUF with pinned free RAM."""
+    model = tmp_path / "model.gguf"
     model.write_bytes(b"\0" * 1024)
     config = _coordinator_config(distribution=None, peers=[])
     config.inference.model_path = str(model)
     manager = InferenceManager(config)
-    with patch("daios_node.inference.subprocess.Popen"):
+    with (
+        patch("daios_node.inference.subprocess.Popen"),
+        patch(
+            "daios_node.inference.psutil.virtual_memory",
+            return_value=_FakeMem(available_bytes),
+        ),
+    ):
         manager._start_llama_server()
+    return manager.llama_server.command
 
-    cmd = manager.llama_server.command
+
+def test_mlock_is_used_for_a_solo_coordinator_with_room(tmp_path):
+    cmd = _solo_mlock_command(tmp_path, available_bytes=64 * 1024**3)  # 64 GB free
     assert "--rpc" not in cmd
     assert "--mlock" in cmd
 
 
 def test_mlock_is_skipped_when_the_model_exceeds_available_ram(tmp_path):
-    model = tmp_path / "huge.gguf"
-    model.write_bytes(b"\0" * 1024)
-    config = _coordinator_config(distribution=None, peers=[])
-    config.inference.model_path = str(model)
-    manager = InferenceManager(config)
+    # 0.5 GB free — less than the 2 GB headroom alone.
+    cmd = _solo_mlock_command(tmp_path, available_bytes=512 * 1024**2)
+    assert "--mlock" not in cmd
 
-    class _TinyMem:
-        available = 512 * 1024 * 1024  # 0.5 GB — less than the 2 GB headroom
 
-    with (
-        patch("daios_node.inference.subprocess.Popen"),
-        patch("daios_node.inference.psutil.virtual_memory", return_value=_TinyMem()),
-    ):
-        manager._start_llama_server()
-
-    assert "--mlock" not in manager.llama_server.command
+@pytest.mark.parametrize(
+    ("available_bytes", "expect_mlock"),
+    [
+        (2 * 1024**3, False),  # model + 2 GB headroom doesn't fit in exactly 2 GB
+        (2 * 1024**3 + 1024**2, True),  # 1 MiB of slack past the headroom is enough
+    ],
+)
+def test_mlock_requires_headroom_beyond_the_model_size(tmp_path, available_bytes, expect_mlock):
+    cmd = _solo_mlock_command(tmp_path, available_bytes=available_bytes)
+    assert ("--mlock" in cmd) is expect_mlock
 
 
 def test_device_probe_is_reused_across_restarts_with_the_same_topology():
